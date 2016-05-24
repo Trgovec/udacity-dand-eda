@@ -8,20 +8,19 @@ output:
 
 ========================================================
 
-```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
-# Load all of the packages that you end up using
-# in your analysis in this code chunk.
+```{r packages, echo=FALSE, message=FALSE, warning=FALSE}
+# Load all of the packages
 
-# Notice that the parameter "echo" was set to FALSE for this code chunk.
-# This prevents the code from displaying in the knitted HTML output.
-# You should set echo=FALSE for all code chunks in your file.
+library(readr)
+#library(devtools)
+#install_github('arilamstein/choroplethrZip@v1.3.0')
+library(choroplethrZip)
+
 
 library(ggplot2)
 library(dplyr)
 library(zipcode)
-#library(devtools)
-#install_github('arilamstein/choroplethrZip@v1.3.0')
-library(choroplethrZip)
+
 library(rvest)
 library(stringr)
 library(gender)
@@ -33,82 +32,151 @@ library(RColorBrewer)
 ```
 
 # Introduction
-I chose to look at 2012 presidential campaign contributions for the state of Ohio.  Ohio has long been a critical swing state for presidential elections and according to Wikipedia, of all the swing states, has the current longest streak of matching the overall election outcome (since 1960). Campaign contributions aren't necessarily the best (or even a strong) predictor of votes, however it does give us some idea of voter sentiment. The ability to predict contribution amount could also be of use to presidential candidates on a campaign trail. This data set has contributions at the zipcode level which, with the help of choropleth maps, will enable us to visualize relationships.
+This project is an exploratory data analysis of campaign contributions for the 2012 presidential election in the state of Ohio.  I chose to look at Ohio because it has a history of being a critical swing state for presidential elections and, according to wikipedia, has the longest streak of matching the overall election outcome (since 1960).  Of course it would be a mistake to assume that campaign contributions are a predictor or even loosely correlated with votes, but Ohio is one of the most frequently visited states on a presidential nominee's campaign trail and for this reason it piqued my interest.   I'll explore the nature of campaign contributions and see if there are any interesting relationships in the data.  Anything of significance could be used as a hypothesis in future inferential or predictive analysis.  If there were any useful information that could be extracted here, it might be useful to a campaign manager who could act upon it.
 
-```{r echo=FALSE, message=FALSE, warning=FALSE, Load_the_Data}
+There are 3 data sets here:
+- campaign contribution data
+- geographic data (to generate maps)
+- demographic data (to add extra features)
+
+The geographic and demographic data come from a library and are already nicely formatted.  The features in the campaign contribution data, however, might need some explicit type declarations.  Let's take a look at the first few rows to inspect the encoding.
+
+```{r inspect, echo=FALSE}
+# let' keep factors for now and see whether or not we need to set this to false
+df.look <- read_csv("campaign-contributions-ohio-2012.csv", n_max = 100)
+```
+
+While trying to read the file, it looks like we are getting some kind of parsing warning about the expected number of columns.  Let's open up the file and manually read the first few lines including the header to see if we can find the problem.
+
+```{r double-check}
+con <- file("campaign-contributions-ohio-2012.csv", "r")
+lines <- readLines(con, 5)
+close(con)
+lines # hard to see but it looks like we have an extra empty column at the end.
+
+# we could use count.fields here but it opens up the entire file so
+# let's avoid this and use it on a smaller test file.
+con <- file("campaign-contributions-ohio-2012.csv", "r")
+lines <- readLines(con, 20)
+close(con)
+
+# using write.csv() here seems to cause problems with escape characters
+# using a connection object works better
+con <- file("test.csv")
+writeLines(lines, con)
+close(con)
+
+count.fields("test.csv", sep=",")
+```
+
+It looks like each row in the dataset aside from the header has an extra empty entry.  If we look at the dataframe with just the first 100 lines, we can actually see that the `readr` library handled this discrepancy perfectly.  It alerted with a warning but the data was read in the way we want with no errors.  We don't have to do anything but it's good to know that we've identified the problem.  Let's get back to inspecting the features types.
+
+```{r}
+str(df.look)
+```
+
+There are a few features that we want as factors such as candidate name, city, state, employer, and occupation, but unfortunately `readr` can't guess factors from characters unless you explicitly state all of them one by one with different commands.  We could set the date but it isn't in ISO format, so we'll have to do this manually too.
+
+```{r load-data, echo=FALSE, message=FALSE, warning=FALSE}
+
 # Load the Data
 
-
-
-#
 # CAMPAIGN CONTRIBUTION DATA
-#
-path <- "C:/Users/Chris/Coursework/UDACITY/UD651-DataAnalysisWithR/Project"
-setwd(path)
-df <- read.csv("campaign-contributions-ohio-2012.csv",
-               header = TRUE, row.names = NULL)
-# columns shifted to right during import
-colnames(df) <- colnames(df)[-1]
-df <- df[-length(df)]
+df <- read_csv("campaign-contributions-ohio-2012.csv")
+
+# GEOGRAPHIC ZIPCODE DATA
+data(zip.map)
+
+# DEMOGRAPHIC DATA
+data(df_zip_demographics)
+```
 
 
+What's the structure of our raw data?
+```{r}
+str(df)
+str(zip.map)
+str(df_zip_demographics)
+```
+The zipcodes in the geographic and demographic data are characters but in the contribution data it's a number.  We'll have to make it a character for consistency.
 
-#
-# REMOVING AND RENAMING VARIABLES
-#
-df <- df[, 3:11]
+
+Now that we have all of our raw data, let's get those features in the right format.
+```{r}
+df$cand_nm <- as.factor(df$cand_nm)
+df$contbr_city <- as.factor(df$contbr_city)
+df$contbr_st <- as.factor(df$contbr_st)
+# zipcode data from the map is character so let's do the same
+df$contbr_zip <- as.character(df$contbr_zip)
+df$contbr_employer <- as.factor(df$contbr_employer)
+df$contbr_occupation <- as.factor(df$contbr_occupation)
+df$contb_receipt_dt <- as.Date(df$contb_receipt_dt, format = "%d-%b-%y")
+```
+
+There are quite a few features in the contribution data that don't really help our exploration like the ID number of the candidate or the file number of the contribution.  The only features of interest are 'candidate', 'name' (of the contributor), 'city', 'state', 'zipcode', 'employer', 'occupation', 'amount', and 'date'.  Let's trim the data set so that it's more manageable.
+
+```{r}
+df <- df[, 3:11] # use indices to keep features since they are all consecutive
+# let's rename the features to make them more readable
 names(df) <- c("candidate", "name", "city", "state", "zipcode",
                  "employer", "occupation", "amount", "date")
+summary(df)
+```
 
 
+We have negative amounts that are refunds, so we'll have to exclude those observations.  Also, some zipcodes either have the full 9 numbers or are wrong so we'll have to clean these.
+```{r echo=FALSE}
 
+# REFUNDS AND ZERO CONTRIBUTIONS
 #
-# DATE OBJECTS
-#
-df$date <- as.character(df$date)
-df$date <- as.Date(df$date, format = "%d-%b-%y")
-
-
-
-#
-# POSITIVE AMOUNT VALUES
-#
-#nrow(subset(df, amount < 0))
-df$amount <- ifelse(df$amount < 0, (-1)*df$amount, df$amount)
+bad <- df$amount <= 0
+df <- df[!bad, ]
 
 
 
 #
 # ZIPCODE CLEANING
 #
+
+# keep first 5 digits since the zip.map data only has 5 and we need to match
+df$zipcode <- substring(df$zipcode, 1, 5)
 # if starts with '45' or '44' or '43' then ok
 zip.legit <- as.character(seq(43000, 46000, by = 1))
-df$zipcode <- substring(df$zipcode, 1, 5)
-# convert non-legit zipcodes to 'NA' character
+# convert non-legit zipcodes to 'NA' character ubt
+# keep data even if the zipcode isn't legit, it could still be relevant
 df$zipcode <- ifelse(df$zipcode %in% zip.legit, df$zipcode, 'NA')
-#table(df$zipcode)
+
+
+table(df$zipcode)
 #zip.count <- df %>% group_by(zipcode) %>% summarise(count = n())
 # some zipcodes with not enough data for aggregate stats df by zipcode
-df$zipcode <- as.factor(df$zipcode)
+#df$zipcode <- as.factor(df$zipcode)
+```
 
 
-
+Let's engineer some features to make the data more rich.  Gender from name and party status from candidate.
+```{r echo=FALSE}
 #
 # ADDING GENDER
 #
 # the gender function returns an alphabetically ordered dataframe...
 df$name <- as.character(df$name)
 df$first_name <- substring(str_extract(df$name, ',\\s[A-Z]+'), 3, )
-# have to specify dplyr to call select correctly here
+# have to specify to dplyr to call select correctly here
 gender_names_df <- gender(unique(df$first_name)) %>%
   dplyr::select(name, gender)
+# merge dataframe with gender names
 df <- merge(df, gender_names_df,
             by.x = 'first_name', by.y = 'name', all.x = TRUE)
+# get rid of first name now that we don't need it
 df$first_name <- NULL
+# get rid of gender names
 gender_names_df <- NULL
+# make gender a factor
 df$gender <- as.factor(df$gender)
-#nrow(subset(df, is.na(gender)))
 
+sum(is.na(df$gender))
+# 4677 obs with NA gender
 
 
 #
@@ -123,7 +191,11 @@ df$party <- ifelse(df$candidate %in% republican, "republican",
 df$candidate <- as.factor(df$candidate)
 df$party <- as.factor(df$party)
 
+```
 
+
+let's add demographic data to the dataset... and geographic...
+```{r echo=FALSE}
 
 #
 # ADDING DEMOGRAPHIC DATA
@@ -142,7 +214,7 @@ colnames(df)[12:19] <- c("population", "pcnt_wht", "pcnt_blk", "pcnt_asn",
 #
 # ADDING MAP DATA
 #
-data(zip.map)
+#data(zip.map)
 mapdata.ohio <- zip.map %>% filter(region %in% zip.legit) %>% arrange(order)
 
 
@@ -167,7 +239,8 @@ city_lat <- as.numeric(str_extract(city_coord, '^[0-9.]+'))
 city_long <- as.numeric(str_extract(city_coord, '[-0-9.]+$'))
 mapdata.ohio.cities <- data.frame(city_names, city_long, city_lat, city_pop)
 
-#sapply(df, class)
+# double check object classes for each features
+sapply(df, class)
 ```
 
 # Univariate Plots Section
@@ -219,22 +292,23 @@ ggplot(data = df, aes(x = amount)) +
 Under $60, we can see contributions spaced in intervals of $5.
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
+
 ggplot(data = df, aes(x = as.factor(year(date)))) +
-  geom_histogram()
+  geom_bar()
 ```
 
 An overwhelming majority of contributions (`r round(100* table(year(df$date))[2]/sum(table(year(df$date))), 1)`%) were made in 2012.
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 ggplot(data = df, aes(x = month(date, label=TRUE))) +
-  geom_histogram()
+  geom_bar()
 ```
 
 We can see a steady increase in contributions leading up to the election in November.
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
-ggplot(data = df, aes(x = day(date))) +
-  geom_histogram() +
+ggplot(data = df, aes(x = as.factor(day(date)))) +
+  geom_bar() +
   scale_x_discrete(breaks = seq(0, 31, 1))
 ```
 
@@ -242,17 +316,17 @@ There seems to be a slight increase in the amount of contributions made toward t
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 ggplot(data = subset(df, !is.na(gender)), aes(x = gender)) +
-  geom_histogram()
+  geom_bar()
 ```
 
 Although a significant difference between the amount of male and female contributions, the proportion (`r round(nrow(subset(df, gender == "male")) / nrow(subset(df, !(is.na(gender)))), 2)` in favor of males) of the gap is not very large.
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 p1 <- ggplot(data = df, aes(x = candidate)) +
-  geom_histogram() +
+  geom_bar() +
   theme(axis.text.x = element_text(angle=90))
 p2 <- ggplot(data = df, aes(x = candidate)) +
-  geom_histogram() +
+  geom_bar() +
   scale_y_log10() +
   theme(axis.text.x = element_text(angle=90))
 grid.arrange(p1, p2, nrow = 1)
@@ -262,7 +336,7 @@ Most contributions are made to either Obama or Romney. Using a log scale we can 
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 ggplot(data = df, aes(x = party)) +
-  geom_histogram()
+  geom_bar()
 ```
 The proportion of contributions to democrats vs. republicans seems to resemble the proportion in the previous histrogram between Obama and Romney. This would make sense as the number of contributions to other candidates is small in comparison to these two. Also, the amount of contributions to the green party is so small (`r nrow(subset(df, party == 'green'))` contributions) that we might want to exclude for simplicity.  
   
@@ -320,7 +394,7 @@ mapdata.ohio.cont <- merge(mapdata.ohio, total_cont,
                            all.x = TRUE) %>% arrange(order)
 ggplot(data = mapdata.ohio.cont, aes(x = long, y = lat, group = group)) +
   geom_polygon(aes(fill = cut_number(count, 8))) +
-  geom_path(colour = 'lightgray', linestyle = 2) +
+  geom_path(colour = 'lightgray') +
   scale_fill_brewer('Total Contributions', palette  = 'Greys') +
   #coord_map() +
   theme_gray()
@@ -350,7 +424,7 @@ ggplot(data = mapdata.ohio.cont, aes(x = long, y = lat, group = group)) +
 }
 ggplot(data = mapdata.ohio.cont, aes(x = long, y = lat, group = group)) +
   geom_polygon(aes(fill = cut_number(count, 8))) +
-  geom_path(colour = 'lightgray', linestyle = 2) +
+  geom_path(colour = 'lightgray') +
   geom_point(data = mapdata.ohio.cities,
              aes(x = city_long, y = city_lat, group = NULL),
              size = 2, color = 'red') +
@@ -360,7 +434,6 @@ ggplot(data = mapdata.ohio.cont, aes(x = long, y = lat, group = group)) +
             hjust = 1, vjust = -2, fontface = 2) +
   scale_size_continuous(range = c(10, 25)) +
   scale_fill_brewer('Total Contributions', palette  = 'Greys') +
-  #coord_map() +
   theme_minimal()
 ```
 
