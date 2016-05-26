@@ -1,0 +1,249 @@
+---
+title: "Ohio 2012 Presidential Campaign Contributions by Christopher Winkelman"
+output:
+  html_document:
+    fig_width: 10
+    fig_height: 5
+---
+
+========================================================
+
+```{r packages, echo=FALSE, message=FALSE, warning=FALSE}
+# Load all of the packages
+# Commented lines are packages that may need installation
+
+library(readr)
+#install.packages("devtools")
+#library(devtools)
+#install_github('arilamstein/choroplethrZip@v1.3.0')
+library(choroplethrZip)
+library(ggplot2)
+library(stringr)
+library(dplyr)
+library(zipcode)
+#install.packages("genderdata")
+library(gender)
+library(rvest)
+library(lubridate)
+library(gridExtra)
+
+#library(GGally)
+#library(memisc)
+#library(RColorBrewer)
+
+# could not find url
+#download.file()
+
+# note that loading and munging the data can be skipped, and tidy data sets
+# can be sourced from the last chunk before the univariate plots section
+```
+
+# Introduction
+This project is an exploratory data analysis of campaign contributions for the 2012 presidential election in the state of Ohio.  I chose to look at Ohio because it has a history of being a critical swing state for presidential elections and, according to wikipedia, has the longest streak of matching the overall election outcome (since 1960).  It would be a mistake to assume that campaign contributions are a predictor or even loosely correlated with votes (I might be biting my tongue if we were talking about superPAC contributions though), but Ohio is one of the most frequently visited states on a presidential nominee's campaign trail and for this reason it piqued my interest.   I'll explore the nature of campaign contributions and see if there are any interesting relationships in the data.  I'll also take a look at the geographic distribution of campaign contributions by zipcode.  Anything of significance could be used as a hypothesis in future inferential or predictive analysis.  This exploration may shed some light on the makeup of a generous contributor and maybe even why particular party candidates visit certain areas of Ohio.
+
+# Load Data
+
+There are 3 data sets here:
+
+- campaign contribution data
+- geographic data (to generate maps)
+- demographic data (to add extra features)
+
+We'll link these datasets by zipcode much like tables in a database.  The geographic and demographic data come from a library and are already nicely formatted.  The features in the campaign contribution data, however, might need some explicit class declarations after we read in the dataframe.  Let's take a look at the first few rows to inspect the atomic classes (aka types).
+
+```{r initial-error, echo=TRUE, eval=TRUE, error=TRUE}
+df_look <- read.csv("campaign-contributions-ohio-2012.csv", nrows = 100)
+```
+
+While trying to read the file, we get some kind of error about the row names.  Let's explicitly set `row.names = NULL` to see if that fixes things.
+
+```{r rownames-null, echo=1}
+df_look <- read.csv("campaign-contributions-ohio-2012.csv", nrows = 100,
+                    row.names=NULL)
+head(df_look); rm(df_look)
+```
+
+By setting the row names to NULL we forced row numbering but for some reason it used an existing column as the row number. Taking a look at the first few lines, it looks like there is a mismatch between the header and the rest of the data.  Let's open up the file and manually read the first few lines including the header to see if we can pinpoint the problem.
+
+```{r readlines}
+con <- file("campaign-contributions-ohio-2012.csv", "r")
+lines <- readLines(con, 5); close(con); lines
+```
+
+It's difficult to tell but it looks like we have an extra empty column at the end.  We could use `count.fields()` but it opens up the entire file.  Instead, let's create a smaller test file to count the fields.
+
+```{r make-testfile}
+con <- file("campaign-contributions-ohio-2012.csv", "r")
+lines <- readLines(con, 20); close(con)
+
+# using write.csv() here seems to cause problems with escape characters
+# using a connection object works better
+con <- file("test.csv"); writeLines(lines, con); close(con)
+count.fields("test.csv", sep = ",")
+```
+
+This confirms that the data following the header somehow has an extra field. The extra field has all NAs and looking back at the line reads we can see that it's just an empty field caused by `","` at the end of the line.
+
+We can solve this a few different ways.  We can set the row names to NULL again, shift the column names to the left, and then remove the last column from the dataframe.  Or, we can get the header row by itself and then use it as the column name for the rest of the data without that last empty column.  This second options seems easier so we'll go with that, after we can finally peak into the data to see if we need to make any adjustments (like strings as factors).
+
+```{r names-and-inspect, echo=-c(-12)}
+df_test_header <- read.csv("test.csv",
+                     header = FALSE, stringsAsFactors = FALSE, nrows = 1)
+
+column_names <- unname(unlist(df_test_header))
+
+df_test_body <- read.csv("test.csv",
+                     header = FALSE, skip = 1)
+
+# remove the last column
+df_test_body <- df_test_body[, 1:length(df_test_body)-1]
+# set the names
+names(df_test_body) <- column_names
+str(df_test_body); rm(df_test_body); rm(df_test_header)
+```
+
+There are more features that we want as factors than characters so we'll keep that default setting.  Contributor name should be a character, and zipcode should also be a character since it looks like some zipcodes are the full 9 digits and so we're gonna have to do some string manipulation.  The receipt date should be a date object but we can set that manually after we read in the data as well.
+
+Now we can read in the entire contributions file  We'll have to skip the header again but since we already have the column names from the test dataframe we can set them easily. We add a dummy name to the column names variable then delete that column after we read in the file.
+
+```{r load-contributions}
+column_names <- c(column_names, "dummy")
+df <- read.csv("campaign-contributions-ohio-2012.csv",
+                     header = FALSE, col.names = column_names, skip = 1)
+df$dummy <- NULL; head(df)
+```
+
+I'm curious to see how readr might have handled this as it's supposed to be more intuitive with reading flat files.  The only drawback is that we would have to set the factors manually which could be pretty lengthy.  In any case, let's check it out.
+
+```{r readr, echo=2}
+library(readr)
+df_readr <- read_csv("campaign-contributions-ohio-2012.csv",
+                     n_max = 100)
+str(df_readr); rm(df_readr)
+```
+
+We got a warning about the column mismatch but readr handled this discrepancy well.  We could have used this and set the factors one by one but `read.csv` allows us to set all characters as factors which works well for this dataframe.  It took way more effort than readr would have, but it also allowed us to pinpoint the exact problem (pros and cons).
+
+Back to the remaining data, let's load the geographic and demographic data.
+
+```{r load-geo-demo, echo=FALSE, message=FALSE, warning=FALSE}
+# geographic data
+data(zip.map); str(zip.map)
+# demographic data
+data(df_zip_demographics); str(df_zip_demographics)
+```
+
+For both of these dataframes, the `region` variable is what we'll be using to relate it to the contributions data.  For the demographic data we can add the fields we want to the contributions data.  However, we'll be making choropleth maps with the geographic data from different aggregate statistics from the contributions data.  So we'll have to bind these 2 on the fly depending upon what we want to show.
+
+# Data Manipulation
+
+Before adding the demographic data, let's get the contributions dataframe prepared. Let's get rid of the data we don't want and rename the columns.  There are quite a few features in the contribution data that don't really help our exploration like the ID number of the candidate or the file number of the contribution.  The only features of interest are `candidate`, `name` (of the contributor), `city`, `state`, `zipcode`, `employer`, `occupation`, `amount`, and `date`.
+
+```{r trim-data}
+df <- df[, 3:11] # the features we want are consecutive
+# rename the features to make them more readable
+names(df) <- c("candidate", "name", "city", "state", "zipcode",
+                 "employer", "occupation", "amount", "date")
+summary(df)
+```
+
+There's something interesting here that we can see by leaving the contributor names as factors.  There are a few contributors who made nearly 100 contributions.  We can also see which zipcodes had the most contributions.  This information could definitely be worth exploring later but we'll need these features as characters for now.
+
+Let's coerce those features that we mentioned before to characters and make date into a date object.
+
+```{r to-character}
+to_character <- c("name", "zipcode", "date")
+
+for(col in to_character) {
+    df[, col] <- as.character(df[, col])
+}
+
+df$date <- as.Date(df$date, format = "%d-%b-%y"); sapply(df, class)
+```
+
+Now let's clean the zipcodes so that they all have just 5 digits so that we can relate them to the zipcodes in the geographic and demographic data.  We also have to make sure that they are in Ohio.
+
+```{r clean-zipcodes}
+df$zipcode <- substring(df$zipcode, 1, 5)
+# if starts with '45' or '44' or '43' then in Ohio
+zip_legit <- as.character(seq(43000, 46000, by = 1))
+# convert non-legit zipcodes to 'NA' character
+df$zipcode <- ifelse(df$zipcode %in% zip_legit, df$zipcode, 'NA')
+summary(as.numeric(df$zipcode)); median(table(df$zipcode))
+#zip.count <- df %>% group_by(zipcode) %>% summarise(count = n())
+# some zipcodes with not enough data for aggregate stats df by zipcode
+```
+
+Looks like they are all within the correct range with the exception of the NAs.  This data won't be usable for the choropleth maps but it's still useful for other statistics so we'll keep it.
+
+We have negative amounts that are refunds, so we'll have to exclude those observations.
+
+```{r refunds}
+bad <- df$amount <= 0; sum(bad); df <- df[!bad, ]
+```
+
+There were `sum(bad)` refunds to exclude.
+
+Let's engineer some features to make more use of the data.  We'll get gender from name and party status from candidate.  Also, 
+
+```{r gender-party}
+
+# make first name feature from full name
+df$first_name <- substring(str_extract(df$name, ',\\s[A-Z]+'), 3, )
+# get dataframe of unique first names and gender
+gender_names_df <- gender(unique(df$first_name)) %>% select(name, gender)
+
+# merge dataframe with gender names
+df <- merge(df, gender_names_df,
+            by.x = 'first_name', by.y = 'name', all.x = TRUE)
+
+# get rid of first name and gender names df, make gender a factor
+df$first_name <- NULL; rm(gender_names_df); df$gender <- as.factor(df$gender)
+# NA gender count
+sum(is.na(df$gender))
+
+candidates <- unique(df$candidate)
+democrat <- "Obama, Barack"; green <- "Stein, Jill"
+republican <- candidates[!(candidates %in% c(democrat, green))]
+df$party <- ifelse(df$candidate %in% republican, "republican",
+                   ifelse(df$candidate == democrat, "democrat", "green"))
+df$party <- as.factor(df$party)
+```
+
+let's add demographic data to the dataset and get coordinates for the cities from the web which will help us to see things better on the map.
+```{r add-demo-city}
+
+demographics.ohio <- df_zip_demographics %>% filter(region %in% zip_legit)
+df <- merge(df, demographics.ohio,
+            by.x = 'zipcode', by.y = 'region', all.x = TRUE)
+# shorten the names
+colnames(df)[12:19] <- c("population", "pcnt_wht", "pcnt_blk", "pcnt_asn",
+                         "pcnt_hsp", "percap_incm", "med_rent", "med_age")
+rm(df_zip_demographics)
+
+# get city coordinates
+webpage_ohio_cities <-
+  read_html("http://www.geonames.org/US/OH/largest-cities-in-ohio.html")
+city_names <- webpage_ohio_cities %>%
+  xml_find_all("//tr/td/a[contains(@href, 'geonames')]/text()") %>%
+  as.character()
+city_pop <- webpage_ohio_cities %>%
+  xml_find_all("//tr/td[contains(@class, 'rightalign')]/text()") %>%
+  as.character() %>%
+  sub(",", "", .) %>%
+  as.numeric()
+city_coord <- webpage_ohio_cities %>%
+  xml_find_all('//tr/td/a[contains(@href, "maps")]/text()') %>%
+  as.character()
+city_lat <- as.numeric(str_extract(city_coord, '^[0-9.]+'))
+city_long <- as.numeric(str_extract(city_coord, '[-0-9.]+$'))
+mapdata.ohio.cities <- data.frame(city_names, city_long, city_lat, city_pop)
+```
+
+Finally, we will subset the map data for Ohio only since it includes the entire United States.
+```{r trim-mapdata}
+mapdata.ohio <- zip.map %>% filter(region %in% zip_legit) %>% arrange(order)
+rm(zip.map)
+#save(df, demographics.ohio, mapdata.ohio, mapdata.ohio.cities, file = "processed-data.Rdata")
+#load("processed-data.Rdata")
+```
