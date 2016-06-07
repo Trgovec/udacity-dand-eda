@@ -1,9 +1,16 @@
 ---
-title: "Ohio 2012 Presidential Campaign Contributions by Christopher Winkelman"
+title: "Ohio 2012 Presidential Campaign Contributions by Christopher B. Winkelman"
 output:
   html_document:
     fig_width: 10
     fig_height: 5
+    toc: true
+    toc_depth: 1
+    toc_float: true
+    number_sections: true
+    theme: united
+    highlight: tango
+    code_folding: hide
 ---
 
 ========================================================
@@ -31,7 +38,7 @@ library(gridExtra)
 #library(memisc)
 #library(RColorBrewer)
 
-# could not find url
+# could not find url or was changed
 #download.file()
 
 # note that loading and munging the data can be skipped, and tidy data sets
@@ -39,7 +46,9 @@ library(gridExtra)
 ```
 
 # Introduction
-This project is an exploratory data analysis of campaign contributions for the 2012 presidential election in the state of Ohio.  I chose to look at Ohio because it has a history of being a critical swing state for presidential elections and, according to wikipedia, has the longest streak of matching the overall election outcome (since 1960).  It would be a mistake to assume that campaign contributions are a predictor or even loosely correlated with votes (I might be biting my tongue if we were talking about superPAC contributions though), but Ohio is one of the most frequently visited states on a presidential nominee's campaign trail and for this reason it piqued my interest.   I'll explore the nature of campaign contributions and see if there are any interesting relationships in the data.  I'll also take a look at the geographic distribution of campaign contributions by zipcode.  Anything of significance could be used as a hypothesis in future inferential or predictive analysis.  This exploration may shed some light on the makeup of a generous contributor and maybe even why particular party candidates visit certain areas of Ohio.
+This project is an exploratory data analysis of campaign contributions for the 2012 presidential election in the state of Ohio.  I chose to look at Ohio because it has a history of being a critical swing state for presidential elections and, according to wikipedia, has the longest streak of matching the overall election outcome (since 1960).  It would be a mistake to assume that campaign contributions are a predictor or even loosely correlated with votes (I might be biting my tongue if we were talking about superPACs though), but Ohio is one of the most frequently visited states on a presidential nominee's campaign trail and for this reason it piqued my interest.   I'll explore the nature of campaign contributions and see if there are any interesting relationships in the data.  I'll also take a look at the geographic distribution of campaign contributions by zipcode.  This exploration may shed light on the characteristics of a generous contributor and perhaps why particular party candidates visit certain areas.  Anything of significance could be used in future inferential or predictive analysis.
+
+---
 
 # Load Data
 
@@ -49,13 +58,15 @@ There are 3 data sets here:
 - geographic data (to generate maps)
 - demographic data (to add extra features)
 
-We'll link these datasets by zipcode much like tables in a database.  The geographic and demographic data come from a library and are already nicely formatted.  The features in the campaign contribution data, however, might need some explicit class declarations after we read in the dataframe.  Let's take a look at the first few rows to inspect the atomic classes (aka types).
+We'll link these datasets by zipcode much like tables in a database.  The geographic and demographic data come from a library and are already nicely formatted.  The features in the campaign contribution data, however, might need some explicit class declarations
+
+Let's peak at the first few rows to inspect the atomic classes (aka types).
 
 ```{r initial-error, echo=TRUE, eval=TRUE, error=TRUE}
 df_look <- read.csv("campaign-contributions-ohio-2012.csv", nrows = 100)
 ```
 
-While trying to read the file, we get some kind of error about the row names.  Let's explicitly set `row.names = NULL` to see if that fixes things.
+While trying to read the file, we get some kind of error about the row names.  Let's explicitly set `row.names = NULL` to see if that fixes it.
 
 ```{r rownames-null, echo=1}
 df_look <- read.csv("campaign-contributions-ohio-2012.csv", nrows = 100,
@@ -63,14 +74,14 @@ df_look <- read.csv("campaign-contributions-ohio-2012.csv", nrows = 100,
 head(df_look); rm(df_look)
 ```
 
-By setting the row names to NULL we forced row numbering but for some reason it used an existing column as the row number. Taking a look at the first few lines, it looks like there is a mismatch between the header and the rest of the data.  Let's open up the file and manually read the first few lines including the header to see if we can pinpoint the problem.
+By setting the row names to `NULL` we forced row numbering but for some reason it used an existing column as the row number. Using `head` to look at the first 6 lines, it seems like there is a mismatch between the header and the rest of the data.  Let's manually open a connection to the file and read a few lines including the header to see if we can pinpoint the problem.
 
 ```{r readlines}
 con <- file("campaign-contributions-ohio-2012.csv", "r")
 lines <- readLines(con, 5); close(con); lines
 ```
 
-It's difficult to tell but it looks like we have an extra empty column at the end.  We could use `count.fields()` but it opens up the entire file.  Instead, let's create a smaller test file to count the fields.
+It's difficult to tell from this output, but it looks like we have an extra empty column at the end of each row.  We could use `count.fields()` but that opens up the entire file.  Instead, let's create a smaller test file to do this.
 
 ```{r make-testfile}
 con <- file("campaign-contributions-ohio-2012.csv", "r")
@@ -82,9 +93,9 @@ con <- file("test.csv"); writeLines(lines, con); close(con)
 count.fields("test.csv", sep = ",")
 ```
 
-This confirms that the data following the header somehow has an extra field. The extra field has all NAs and looking back at the line reads we can see that it's just an empty field caused by `","` at the end of the line.
+This confirms that the data following the header somehow has an extra field. Looking back at the results from `head` and `readlines`, we can see that the extra field is full of NAs and it's just an empty field caused by `","` at the end of each row.
 
-We can solve this a few different ways.  We can set the row names to NULL again, shift the column names to the left, and then remove the last column from the dataframe.  Or, we can get the header row by itself and then use it as the column name for the rest of the data without that last empty column.  This second options seems easier so we'll go with that, after we can finally peak into the data to see if we need to make any adjustments (like strings as factors).
+We can fix this a few different ways.  We can set the row names to NULL again, shift the column names to the left, and then remove the last column from the dataframe.  Or, we can get the header row by itself and then use it as the column name for the rest of the data without that last empty column.  The second options seems easier so we'll go with that.  After, we can finally peak into the correctly structured data to see if we need to make any adjustments (like strings as factors).
 
 ```{r names-and-inspect, echo=-c(-12)}
 df_test_header <- read.csv("test.csv",
@@ -102,9 +113,9 @@ names(df_test_body) <- column_names
 str(df_test_body); rm(df_test_body); rm(df_test_header)
 ```
 
-There are more features that we want as factors than characters so we'll keep that default setting.  Contributor name should be a character, and zipcode should also be a character since it looks like some zipcodes are the full 9 digits and so we're gonna have to do some string manipulation.  The receipt date should be a date object but we can set that manually after we read in the data as well.
+There are more features that we want as factors than characters so we'll keep that default setting.  Contributor name should be a character, and zipcode should also be a character since it looks like some zipcodes are the full 9 digits and thus we're gonna have to do some string manipulation.  The receipt date should be a date object but we can also set that manually after we read in the data.
 
-Now we can read in the entire contributions file  We'll have to skip the header again but since we already have the column names from the test dataframe we can set them easily. We add a dummy name to the column names variable then delete that column after we read in the file.
+Now we can read in the entire contributions file.  We'll have to skip the header again but since we already have the column names from the test dataframe we can set them easily. We add a dummy name to the column names variable to account for the empty entry and then delete that column afterwards.
 
 ```{r load-contributions}
 column_names <- c(column_names, "dummy")
@@ -113,7 +124,7 @@ df <- read.csv("campaign-contributions-ohio-2012.csv",
 df$dummy <- NULL; head(df)
 ```
 
-I'm curious to see how readr might have handled this as it's supposed to be more intuitive with reading flat files.  The only drawback is that we would have to set the factors manually which could be pretty lengthy.  In any case, let's check it out.
+I'm curious to see how the `readr` package might have handled this, as it's supposed to be more intuitive with reading flat files.  The only drawback is that we would have to set the factors manually which could be pretty lengthy.  In any case, let's check it out.
 
 ```{r readr, echo=2}
 library(readr)
@@ -122,9 +133,9 @@ df_readr <- read_csv("campaign-contributions-ohio-2012.csv",
 str(df_readr); rm(df_readr)
 ```
 
-We got a warning about the column mismatch but readr handled this discrepancy well.  We could have used this and set the factors one by one but `read.csv` allows us to set all characters as factors which works well for this dataframe.  It took way more effort than readr would have, but it also allowed us to pinpoint the exact problem (pros and cons).
+We got a warning about the column mismatch but `readr` handled the discrepancy.  We could have done this instead and set the factors one by one but `read.csv` allows us to set all characters as factors which was advantageous.  It took way more effort than `readr` would have, but it also allowed us to pinpoint the exact problem.
 
-Back to the remaining data, let's load the geographic and demographic data.
+Back to loading the rest of the data. Let's load the geographic and demographic data.
 
 ```{r load-geo-demo, echo=FALSE, message=FALSE, warning=FALSE}
 # geographic data
@@ -133,7 +144,9 @@ data(zip.map); str(zip.map)
 data(df_zip_demographics); str(df_zip_demographics)
 ```
 
-For both of these dataframes, the `region` variable is what we'll be using to relate it to the contributions data.  For the demographic data we can add the fields we want to the contributions data.  However, we'll be making choropleth maps with the geographic data from different aggregate statistics from the contributions data.  So we'll have to bind these 2 on the fly depending upon what we want to show.
+For both of these dataframes, the `region` variable (zipcode) is what we'll be using to relate to the contributions data.  For the demographic data, we can add the fields we want to the contributions dataframe.  However, we'll be making choropleth maps with the geographic data from different aggregate statistics from the contributions dataframe.  So we'll have to bind these 2 on the fly depending upon what we want to show.
+
+---
 
 # Data Manipulation
 
@@ -161,7 +174,7 @@ for(col in to_character) {
 df$date <- as.Date(df$date, format = "%d-%b-%y"); sapply(df, class)
 ```
 
-Now let's clean the zipcodes so that they all have just 5 digits so that we can relate them to the zipcodes in the geographic and demographic data.  We also have to make sure that they are in Ohio.
+Now let's clean the zipcodes so that they all have just 5 digits, and so that we can relate them to the zipcodes in the geographic and demographic data.  We also have to make sure that they are in Ohio.
 
 ```{r clean-zipcodes}
 df$zipcode <- substring(df$zipcode, 1, 5)
@@ -169,22 +182,20 @@ df$zipcode <- substring(df$zipcode, 1, 5)
 zip_legit <- as.character(seq(43000, 46000, by = 1))
 # convert non-legit zipcodes to 'NA' character
 df$zipcode <- ifelse(df$zipcode %in% zip_legit, df$zipcode, 'NA')
-summary(as.numeric(df$zipcode)); median(table(df$zipcode))
-#zip.count <- df %>% group_by(zipcode) %>% summarise(count = n())
-# some zipcodes with not enough data for aggregate stats df by zipcode
+summary(as.numeric(df$zipcode))
 ```
 
 Looks like they are all within the correct range with the exception of the NAs.  This data won't be usable for the choropleth maps but it's still useful for other statistics so we'll keep it.
 
-We have negative amounts that are refunds, so we'll have to exclude those observations.
+We do have negative amounts though, which happen to be refunds, so we'll have to exclude those observations.
 
 ```{r refunds}
 bad <- df$amount <= 0; sum(bad); df <- df[!bad, ]
 ```
 
-There were `sum(bad)` refunds to exclude.
+There were `r sum(bad)` refunds excluded.
 
-Let's engineer some features to make more use of the data.  We'll get gender from name and party status from candidate.  Also, 
+Let's engineer some features in order to make more use of the data that we have.  We'll get gender from name and party status from candidate.
 
 ```{r gender-party}
 
@@ -200,7 +211,7 @@ df <- merge(df, gender_names_df,
 # get rid of first name and gender names df, make gender a factor
 df$first_name <- NULL; rm(gender_names_df); df$gender <- as.factor(df$gender)
 # NA gender count
-sum(is.na(df$gender))
+print("missing gender:"); sum(is.na(df$gender))
 
 candidates <- unique(df$candidate)
 democrat <- "Obama, Barack"; green <- "Stein, Jill"
@@ -210,7 +221,8 @@ df$party <- ifelse(df$candidate %in% republican, "republican",
 df$party <- as.factor(df$party)
 ```
 
-let's add demographic data to the dataset and get coordinates for the cities from the web which will help us to see things better on the map.
+Now we can add demographic data to the dataset and get coordinates for the cities from the web.  The cities will help us to see things better on the map.
+
 ```{r add-demo-city}
 
 demographics.ohio <- df_zip_demographics %>% filter(region %in% zip_legit)
@@ -240,10 +252,297 @@ city_long <- as.numeric(str_extract(city_coord, '[-0-9.]+$'))
 mapdata.ohio.cities <- data.frame(city_names, city_long, city_lat, city_pop)
 ```
 
-Finally, we will subset the map data for Ohio only since it includes the entire United States.
+Finally, we will subset the map data for Ohio only, since it includes the entire United States.
+
 ```{r trim-mapdata}
 mapdata.ohio <- zip.map %>% filter(region %in% zip_legit) %>% arrange(order)
 rm(zip.map)
+# save/load data into .Rdata file for easy start
 #save(df, demographics.ohio, mapdata.ohio, mapdata.ohio.cities, file = "processed-data.Rdata")
 #load("processed-data.Rdata")
 ```
+
+---
+
+# Univariate Plots Section
+
+```{r global_options}
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, messages=FALSE)
+```
+
+Now that the data is in the right format let's start our univariate exploration.
+
+We have 19 different variables:
+
+```{r univariate-plots}
+names(df)
+```
+
+
+with varying classes:
+
+```{r}
+str(df)
+```
+
+The most popular candidate to receive contributions was Barack Obama and the most popular party was the democratic party.  The city with the most contributions was Cincinnati and retired people represented the occupation with the largest amount of contributions.  The demographic of males made more contributions than females.  The median contribution was $`r median(df$amount)` and the average is $`r round(mean(df$amount))`.
+
+```{r}
+summary(df)
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data = df, aes(x = amount)) +
+  geom_histogram(binwidth = 250) +
+  scale_x_continuous(breaks = c(0, 1000, 2500, 5000, 10000, 15000))
+```
+
+We have long-tailed data. There are so many contributions made under $1,000 that it's hard to see any of the outliers.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data = df, aes(x = amount)) +
+  geom_histogram() +
+  scale_x_log10(breaks = c(10, 100, 1000))
+```
+
+A logarithmic transformation of the x-axis reveals something of a log-normal distribution with what could be a mean of $100. Even so, we can see that the distribution is heavier below this mean.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data = df, aes(x = amount)) +
+  geom_histogram(binwidth = 50) +
+  xlim(0, 3000)
+```
+
+There are a significant group of people (`r nrow(subset(df, amount == 2500))`) that, despite the long-tailed distribution, contribute $2,500.  I wonder if there is some tax write-off reason for this.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data = df, aes(x = amount)) +
+  geom_histogram(binwidth = 1) +
+  xlim(0, 300)
+```
+
+Looking closer we can see that there appear to be several discrete values in increments of $50 that people are accustomed to contributing.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data = df, aes(x = amount)) +
+  geom_histogram(binwidth = 1) +
+  scale_x_continuous(limits = c(0, 60), breaks = seq(0, 60, 5))
+```
+
+Under $60, we can see contributions spaced in intervals of $5.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+ggplot(data = df, aes(x = as.factor(year(date)))) +
+  geom_bar()
+```
+
+An overwhelming majority of contributions (`r round(100* table(year(df$date))[2]/sum(table(year(df$date))), 1)`%) were made in 2012.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data = df, aes(x = month(date, label=TRUE))) +
+  geom_bar()
+```
+
+We can see a steady increase in contributions leading up to the election in November.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data = df, aes(x = as.factor(day(date)))) +
+  geom_bar() +
+  scale_x_discrete(breaks = seq(0, 31, 1))
+```
+
+There seems to be a slight increase in the amount of contributions made toward the end of the month. There is also a peak at about halfway through the month. People might be making contributions immediately after receiving their paychecks or pensions.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data = subset(df, !is.na(gender)), aes(x = gender)) +
+  geom_bar()
+```
+
+Although a significant difference between the amount of male and female contributions, the proportion (`r round(nrow(subset(df, gender == "male")) / nrow(subset(df, !(is.na(gender)))), 2)` in favor of males) of the gap is not very large.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+p1 <- ggplot(data = df, aes(x = candidate)) +
+  geom_bar() +
+  theme(axis.text.x = element_text(angle=90))
+p2 <- ggplot(data = df, aes(x = candidate)) +
+  geom_bar() +
+  scale_y_log10() +
+  theme(axis.text.x = element_text(angle=90))
+grid.arrange(p1, p2, nrow = 1)
+```
+
+Most contributions are made to either Obama or Romney. Using a log scale we can see the other candidates a little better.  There are a significant amount of contributions made to other candidates but they are mostly Republican. It would probably be better to use party instead of candidate as a predictor.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data = df, aes(x = party)) +
+  geom_bar()
+```
+The proportion of contributions to democrats vs. republicans seems to resemble the proportion in the previous histrogram between Obama and Romney. This would make sense as the number of contributions to other candidates is small in comparison to these two. Also, the amount of contributions to the green party is so small (`r nrow(subset(df, party == 'green'))` contributions) that we might want to exclude for simplicity.  
+  
+It's important to remember that the remaining demographic variables correspond to the contributor's zipcode and not to the contributor him/herself.
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data = df, aes(x = population)) +
+  geom_histogram()
+```
+
+```{r echo = FALSE}
+options(scipen=999)
+```
+
+The distribution of population in which contributors live is fairly normal with mean `r round(mean(df$population, na.rm = TRUE))` and median `r median(df$population, na.rm = TRUE)`.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+p1 <- ggplot(data = df, aes(x = pcnt_wht)) +
+  geom_histogram()
+p2 <- ggplot(data = df, aes(x = pcnt_blk)) +
+  geom_histogram()
+p3 <- ggplot(data = df, aes(x = pcnt_asn)) +
+  geom_histogram()
+p4 <- ggplot(data = df, aes(x = pcnt_hsp)) +
+  geom_histogram()
+grid.arrange(p1, p2, p3, p4, nrow = 2)
+```
+
+Most contributors live in areas with a high percentage of white ethnicity and a very low percentage of black, asian, or hispanic ethnicity.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data = df, aes(x = percap_incm)) +
+  geom_histogram()
+```
+
+The distribution of per capita income in which contributors live is fairly normal with most living in zipcodes with a range of per capita income of about $20,000 - $40,000. The average is $`r round(mean(df$percap_incm, na.rm = TRUE))` and the median is $`r median(df$percap_incm, na.rm = TRUE)`.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data = df, aes(x = med_rent)) +
+  geom_histogram()
+```
+
+Again, we see a fairly normal distribution of median rent in the locations in which contributors live. Rent is very cheap (median of $`r median(df$med_rent, na.rm = TRUE)`) as compared to California but per capita income is also lower.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data = df, aes(x = med_age)) +
+  geom_histogram()
+```
+
+The median age in which contributors live also resembles a normal distrubtion with median `r median(df$med_age, na.rm = TRUE)`  Looking back at the summary statistics we can see that most contributions come from areas where the median age is over 40 (39.5 precisely).  I could not find exact statistics for the median age in Ohio in 2012, but in 2015 it appears to be 38.8.  We might be tempted to say that contributions come from areas where the population is older which would make sense given the high number of retiree contributions.  However whether or not the difference is significant would need some inferential analysis which is beyond the scope of this project.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+total_cont <- df %>% group_by(zipcode) %>% summarise(count = n())
+mapdata.ohio.cont <- merge(mapdata.ohio, total_cont,
+                           by.x = 'region', by.y = 'zipcode',
+                           all.x = TRUE) %>% arrange(order)
+ggplot(data = mapdata.ohio.cont, aes(x = long, y = lat, group = group)) +
+  geom_polygon(aes(fill = cut_number(count, 8))) +
+  geom_path(colour = 'lightgray') +
+  scale_fill_brewer('Total Contributions', palette  = 'Greys') +
+  #coord_map() +
+  theme_gray()
+```
+
+A choropleth map of total contributions by zipcode shows that there are hotspots of contributions. Because the zipcodes are so small in these hotspots we might assume that they are cities.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# this first plot will size a city bubble based upon it's population
+# but it is visually overwhelming.
+if(FALSE){
+ggplot(data = mapdata.ohio.cont, aes(x = long, y = lat, group = group)) +
+  geom_polygon(aes(fill = cut_number(count, 8))) +
+  geom_path(colour = 'lightgray') +
+  geom_point(data = mapdata.ohio.cities,
+             aes(x = city_long, y = city_lat,
+                 size = city_pop, group = NULL),
+             color = 'green', alpha = 0.4) +
+  geom_text(data = mapdata.ohio.cities,
+            aes(x = city_long, y = city_lat, group = NULL),
+                label = city_names, size = 3, color = 'black', alpha = 1,
+            hjust = 1, vjust = -2, fontface = 2) +
+  scale_size_continuous(range = c(10, 25)) +
+  scale_fill_brewer('Total Contributions', palette  = 'YlOrRd') +
+  #coord_map() +
+  theme_minimal()
+}
+ggplot(data = mapdata.ohio.cont, aes(x = long, y = lat, group = group)) +
+  geom_polygon(aes(fill = cut_number(count, 8))) +
+  geom_path(colour = 'lightgray') +
+  geom_point(data = mapdata.ohio.cities,
+             aes(x = city_long, y = city_lat, group = NULL),
+             size = 2, color = 'red') +
+  geom_text(data = mapdata.ohio.cities,
+            aes(x = city_long, y = city_lat, group = NULL),
+                label = city_names, size = 3, color = 'red', alpha = 1,
+            hjust = 1, vjust = -2, fontface = 2) +
+  scale_size_continuous(range = c(10, 25)) +
+  scale_fill_brewer('Total Contributions', palette  = 'Greys') +
+  theme_minimal()
+```
+
+With an overlay of city location, we can see that total contributions are higher nearest to major cities but there are also some other locations with a high number.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+popltn <- demographics.ohio %>% select(region, total_population)
+mapdata.ohio.pop <- merge(mapdata.ohio, popltn) %>% arrange(order)
+ggplot(data = mapdata.ohio.pop, aes(x = long, y = lat, group = group)) +
+  geom_polygon(aes(fill = cut_number(total_population, 8))) +
+  geom_path(colour = 'lightgray') +
+  scale_fill_brewer('Total Population', palette  = 'Greys') +
+  #coord_map() +
+  theme_gray()
+```
+
+A map of total population per zipcode is definitely similar to the map of total contributions but it doesn't seem like an exact match. It could be that the higher the population in a zipcode, the more contributions are made. There may also be more contributions made from affluent suburbs with higher per capita income and smaller populations.
+
+---
+
+# Univariate Analysis
+
+### What is the structure of your dataset?
+There are 151,479 instances of campaign contribution in the dataset with 19 features.  From the original data set 11 features were kept or derived:  
+
+* candidate
+* name (contributor)
+* city
+* state
+* zipcode
+* employer
+* occupation
+* amount
+* date
+* gender
+* party
+
+Using the zipcode feature, demographic information was added from another data set:  
+
+* total_population
+* percent_white
+* percent_black
+* percent_asian
+* percent_hispanic
+* per_capita_income
+* median_rent
+* median_age
+
+From the original data set, all but name, amount, and date are factors. None of the factors are ordered. Name is a character, amount is numeric, and date is a date object. The 8 demographic features are all numeric.  
+
+Other observations:  
+
+* The largest group of contributors by occupation are retirees
+* About 60% of contributions are made by democrats
+* The median contribution amount is $50 and the maximum is $15,000
+* Barack Obama received 60% of contributions
+* Women accounted for 45% of contributors
+* The number of monthly contributions show an exponential increase as the election approaches
+
+### What is/are the main feature(s) of interest in your dataset?
+The main features of interest in the data set are amount, gender, party, per capita income, and median age. I would like to see if these factors are correlated with contribution amount. Occupation could be of interest however there are too many levels (6,846).
+
+### What other features in the dataset do you think will help support your investigation into your feature(s) of interest?
+I believe that the percent ethnicities, total population, and median rent may be correlated with contribution amount.
+
+### Did you create any new variables from existing variables in the dataset?
+I created two new variables, one for the gender of the contributor based upon the first name, and another for the party of the contributor based upon the candidate that received the contribution. I was unable to programatically determine gender by first name for about 4,742 instances (approx. 3% of the data).
+
+### Of the features you investigated, were there any unusual distributions? Did you perform any operations on the data to tidy, adjust, or change the form of the data? If so, why did you do this?
+A log transformation of contribution amount revealed a log-normal distribution. Despite this, we can see in the non-skewed distribution that there are a significant group of people that donate the maximum allowable campaign contribution by law (approx. $2,600). There are also Political Action Committee (PAC) data in the set which have a larger limit (approx. $5,000). I am unsure of the validity of the outliers beyond this amount because of my limited knowledge of campaign finance law. That there were several negative amounts which needed to be corrected to positive leads me to believe that there could be further inaccuracies in the data set.  
+The data came in a tidy format and did not need to be transformed.
