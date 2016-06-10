@@ -1,21 +1,9 @@
----
-title: "Ohio 2012 Presidential Campaign Contributions by Christopher B. Winkelman"
-output:
-  html_document:
-    fig_width: 10
-    fig_height: 7
-    toc: true
-    toc_depth: 1
-    toc_float: true
-    number_sections: true
-    theme: united
-    highlight: tango
-    code_folding: hide
----
 
-========================================================
+```{r global_options}
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, messages=FALSE)
+```
 
-```{r packages, echo=FALSE, message=FALSE, warning=FALSE}
+```{r packages}
 # Load all of the packages
 # Commented lines are packages that may need installation
 
@@ -35,9 +23,9 @@ library(lubridate)
 library(gridExtra)
 library(RColorBrewer)
 library(ggthemes)
-
+library(polycor)
 #library(GGally)
-#library(memisc)
+library(memisc)
 
 # could not find url or was changed
 #download.file()
@@ -50,209 +38,32 @@ library(ggthemes)
 load("processed-data.Rdata")
 ```
 
-```{r global_options}
-knitr::opts_chunk$set(echo=FALSE, warning=FALSE, messages=FALSE)
-```
-
-# Bivariate Plots Section
-```{r}
-# add time as numeric date variable
-df$time <- as.numeric(as.POSIXct(df$date, format="%Y-%m-%d %H:%M:%S"))
-
-library(polycor)
-hetcor(df[, c(8, 10:21)])
-```
-
-None of the numeric variables seem to be strongly correlated with amount. The per capita income in the zipcode of the contributor has the highest correlation at 0.16. The second highest correlation at -0.11 is with time and indicates that, despite the increase in contributions leading up to the election, amount is negatively correlated with increasing time.  Contribution amount seems to wane as the election approaches.
-
-```{r pairs_plot, cache=TRUE, cache.path='.cache/', fig.path='.figure/'}
-#pairs_df <- df[, c("amount", "gender", "party", "percap_incm", "time")]
-#library(GGally)
-#ggpairs(pairs_df)
-
-#pairs_df <- df[, c(8, 10:20)] %>% filter(!(is.na(gender)), party != "green")
-#pairs_plt = ggpairs(pairs_df, color = "gender",
-                      #columnLabels = c("amt", "gndr", "prty", "pop",
-                                       #"%w", "%b", "%a", "%h",
-                                       #"inc", "rnt", "age", "tm"),
-                      #params=list(size=2))
-#print(pairs_plt, left = 0.75, bottom = 0.75)
-```
-
-
-```{r}
-oneway.test(df$amount ~ df$gender, var.equal = TRUE)
-oneway.test(df$amount ~ df$party, var.equal = TRUE)
-
-normals <- rnorm(1000, mean = 5, sd = 3)
-
-# test normality
-shapiro.test(normals)
-qqnorm(normals)
-qqnorm(df$amount)
-qqnorm(log(df$amount))
-
-set.seed(27)
-amount_sample <- sample(log(df$amount), 5000)
-shapiro.test(amount_sample)
-
-# test difference of means
-oneway.test(df$amount ~ df$gender, var.equal = TRUE)
-oneway.test(df$amount ~ df$party, var.equal = TRUE)
-```
-
-
-```{r}
-ggplot(data = df, aes(x = month(date, label=TRUE), fill = as.factor(year(df$date)))) +
-    geom_bar(position = "dodge") + scale_fill_manual(values = c("#7fcdbb", "#2c7fb8"))
-```
-
-```{r echo=FALSE, message=FALSE, warning=FALSE}
-ggplot(aes(y = amount, x = as.factor(year(date))), data = df) +
-  geom_boxplot(outlier.color = NA) +
-  stat_summary(fun.y = mean, geom = "point", size = 3) +
-  coord_cartesian(ylim = c(0, 400))
-oneway.test(df$amount ~ as.factor(year(df$date)), var.equal = TRUE)
-```
-
-
-```{r}
-good <- !is.na(df$gender) & df$party != "green"
-ggplot(data = df[good, ], aes(x = party, fill = gender)) +
-  geom_bar(position = "dodge") +
-  scale_fill_brewer(palette = 'Set2')
-```
-
-Contributions to the Democratic party came from a slight female majority whereas contributions to the Republican party came from an overwhelming male majority.
-
-
-```{r echo=FALSE, message=FALSE, warning=FALSE, Bivariate_Plots2}
-ggplot(data = df[good, ], aes(x = amount, fill = gender)) +
-  geom_histogram(position = "dodge") +
-  scale_fill_brewer(palette = 'Set2') +
-  scale_x_log10() +
-  facet_wrap(~party, ncol = 1)
-```
-
-The factored variables of gender and party were not included in the correlation analysis or pairs plot so we should take a closer look at these.
-
-```{r echo=FALSE, message=FALSE, warning=FALSE}
-ggplot(data = df[good, ], aes(x = gender, y = amount, fill = gender)) +
-  geom_boxplot(outlier.color = NA) +
-  stat_summary(fun.y = mean, geom = "point", size = 3) +
-  scale_fill_brewer(palette = 'Set2', guide = FALSE) +
-  coord_cartesian(ylim = c(0, 400))
-oneway.test(df$amount ~ df$gender, var.equal = TRUE)
-```
-
-The mean contribution amount as well as the IQ range is larger for males than females.
-
-```{r echo=FALSE, message=FALSE, warning=FALSE}
-ggplot(data = subset(df, party != "green"),
-       aes(x = party, y = amount, fill = party)) +
-  geom_boxplot(outlier.color = NA) +
-  stat_summary(fun.y = mean, geom = "point", size = 3) +
-  scale_fill_brewer(palette = 'Set1', direction = -1, guide = FALSE) +
-  coord_cartesian(ylim = c(0, 400))
-oneway.test(df$amount ~ df$party, var.equal = TRUE)
-```
-
-The mean contribution amount as well as the IQ range is larger for republicans than democrats.   
-
-   
-The following are plots of variables of interest by amount with correlation statistics.
-
-```{r echo=FALSE, message=FALSE, warning=FALSE}
-ggplot(data = df, aes(x = percap_incm, y = amount)) +
-  geom_jitter(alpha = 0.02) +
-  geom_smooth(method = 'lm', color = 'blue') +
-  geom_smooth(color = 'red') +
-  coord_cartesian(ylim = c(0, 1000))
-cor(df$percap_incm, df$amount, use = "complete.obs")
-```
-
-```{r echo=FALSE, message=FALSE, warning=FALSE}
-ggplot(aes(y = amount, x = date), data = df) +
-  geom_jitter(alpha = 0.02) +
-  geom_smooth(method = 'lm', color = 'blue') +
-  geom_smooth(color = 'red') +
-  coord_cartesian(ylim = c(0, 1000))
-cor(df$time, df$amount, use = "complete.obs")
-```
-
-```{r echo=FALSE, message=FALSE, warning=FALSE}
-ggplot(aes(y = amount, x = med_age), data = df) +
-  geom_jitter(color = 'orange', alpha = 0.05) +
-  geom_smooth(method = 'lm', color = 'blue') +
-  geom_smooth(color = 'red') +
-  coord_cartesian(ylim = c(0, 3000))
-cor(df$med_age, df$amount, use = "complete.obs")
-```
-
-Despite some significant correlation values here, they are difficult to see when plotted. I think that these relationship are very weak as far as being able to predict contribution amount.
-
-In this choropleth map, the location of the population centers are not as apparent. Average contribution amount doesn't seem to correlate with a city center as much as total contributions.
-
-```{r echo=FALSE, message=FALSE, warning=FALSE}
-avg_amount <- df %>% group_by(zipcode) %>%
-  summarise(avg.amount = mean(amount))
-mapdata.ohio.avg_amount <- merge(mapdata.ohio, avg_amount,
-                                 by.x = 'region', by.y = 'zipcode',
-                                 all.x = TRUE) %>% arrange(order)
-
-ggplot(data = mapdata.ohio.avg_amount, aes(x = long, y = lat, group = group)) +
-  geom_polygon(aes(fill = cut_number(avg.amount, 8))) +
-  geom_path(colour = 'lightgray') +
-  geom_point(data = mapdata.ohio.cities,
-             aes(x = city_long, y = city_lat, group = NULL),
-             size = 2, color = 'magenta') +
-  geom_text(data = mapdata.ohio.cities,
-            aes(x = city_long, y = city_lat, group = NULL),
-                label = city_names, size = 3, color = 'magenta', alpha = 1,
-            hjust = 1, vjust = -2, fontface = 2) +
-  scale_size_continuous(range = c(10, 25)) +
-  scale_fill_brewer('Average Amount', palette  = 'Greens') +
-  #coord_map() +
-  theme_minimal()
-```
-
-Here we can see the population centers.
-
-```{r echo=FALSE, message=FALSE, warning=FALSE}
-income <- demographics.ohio %>% dplyr::select(region, per_capita_income)
-mapdata.ohio.income <- merge(mapdata.ohio, income) %>% arrange(order)
-ggplot(data = mapdata.ohio.income, aes(x = long, y = lat, group = group)) +
-  geom_polygon(aes(fill = cut_number(per_capita_income, 8))) +
-  geom_path(colour = 'lightgray', linestyle = 2) +
-  scale_fill_brewer('Per Capita Income', palette  = 'Oranges') +
-  #coord_map() +
-  theme_gray()
-```
-
-Average contribution amount may more closely resemble per capita income rather than total population. Higher values surround the city centers with something of a buffer. Also, there are some areas away from the city centers with high average contribution amount. These could be affluent rural areas or areas with little data.
-
-Total amount of contribution per zipcode does again seem to correlate with city proximity.
-
-```{r echo=FALSE, message=FALSE, warning=FALSE}
-total_amt <- df %>% group_by(zipcode) %>%
-  summarise(total.amount = sum(amount))
-mapdata.ohio.total_amt <- merge(mapdata.ohio, total_amt,
+```{r experimental_plots, eval=FALSE}
+total_amt_dem_df <- df[(df$party == "democrat"), ] %>% group_by(zipcode) %>% summarise(total_amt = sum(amount))
+quants <- quantile(total_amt_dem_df$total_amt, probs = c(0, .15, .3, .45, .55, .70, .85, 1))
+mapdata.ohio.totals <- merge(mapdata.ohio, total_amt_dem_df,
                                 by.x = 'region', by.y = 'zipcode',
                                 all.x = TRUE) %>% arrange(order)
 
-ggplot(data = mapdata.ohio.total_amt, aes(x = long, y = lat, group = group)) +
-  geom_polygon(aes(fill = cut_number(total.amount, 8))) +
-  geom_path(colour = 'lightgray') +
-  geom_point(data = mapdata.ohio.cities,
-             aes(x = city_long, y = city_lat, group = NULL),
-             size = 2, color = 'green') +
-  geom_text(data = mapdata.ohio.cities,
-            aes(x = city_long, y = city_lat, group = NULL),
-                label = city_names, size = 3, color = 'green', alpha = 1,
-            hjust = 1, vjust = -2, fontface = 2) +
-  scale_size_continuous(range = c(10, 25)) +
-  scale_fill_brewer('Total Amount', palette  = 'Purples') +
-  #coord_map() +
-  theme_minimal()
-```
+# ggvis
+library(ggvis)
+mapdata.ohio.totals %>%
+  ggvis(~long, ~lat) %>% group_by(group) %>%
+  layer_paths(fill =~cut(total_amt, breaks = quants, include.lowest = TRUE)) %>%
+  scale_ordinal("fill", range=c("#fee5d9", "#fcbba1", "#fc9272", "#fb6a4a", "#ef3b2c", "#cb181d", "#99000d"))
 
+# leaflet
+library(leaflet)
+leaflet_map <- mapdata.ohio.totals[1:400, ]
+#split(leaflet_map, leaflet_map$group)
+for(row in leaflet_map[1:20, ]) {
+  print(row["group"])
+}
+library(rgdal) #maptools?
+leaflet_map[149, ] <- rep(NA, ncol(leaflet_map))
+leaflet() %>% addTiles() %>% addPolygons(data = leaflet_map, lng = ~long, lat = ~lat, color = ~pal(total_amt))
+
+# ggmaps
+library(ggmap)
+qmap('ohio', zoom = 7, maptype = 'roadmap')
+```
