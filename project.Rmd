@@ -38,6 +38,7 @@ library(polycor)
 #library(GGally)
 library(memisc)
 library(scales)
+library(ggfortify)
 #download.file()
 
 # note that the first 2 sections of loading and manipulating
@@ -48,27 +49,27 @@ library(scales)
 
 # Introduction
 
-This project is an exploratory data analysis of campaign contributions for the 2012 presidential election in the state of Ohio.  The state of Ohio is historically a critical swing state for presidential elections and, according to wikipedia, has the longest streak of matching the overall election outcome (since 1960).  It would be a mistake to assume that campaign contributions are a predictor or even loosely correlated with votes (I might be biting my tongue if we were talking about superPACs though), but Ohio is one of the most frequently visited states on a presidential nominee's campaign trail and for this reason it piqued my interest.   I'll explore the nature of campaign contributions and see if there are any interesting relationships in the data.  I'll also take a look at the geographic distribution of campaign contributions by zipcode.  This exploration may shed light on the characteristics of a generous contributor and perhaps why particular party candidates visit certain areas in the state.  Anything of significance could be used in future inferential or predictive analysis.
+This is an exploratory data analysis of campaign contributions for the state of Ohio during the 2012 presidential election.  Historically, Ohio has been a critical swing state for presidential elections and, according to wikipedia, possesses the longest streak of matching the overall election outcome (since 1960).  It would be a mistake to infer that campaign contributions are a predictor or even loosely correlated with votes (I might be biting my tongue if we were talking about superPACs though), but Ohio is one of the most frequently visited states on a presidential nominee's campaign trail and for this reason it piqued my interest.   I'll explore the nature of campaign contributions and see if there are any interesting relationships in the data.  I'll also take a look at the geographic distribution of campaign contributions by zipcode.  This exploration may shed light on the characteristics of a generous contributor and perhaps why particular party candidates visit certain areas in the state.  Anything of significance could be used in future inferential or predictive analysis.
 
 ---
 
 # Load Data
 
-There are 3 data sets here:
+There are 3 data sets that will be used for this exploration:
 
 - campaign contribution data
 - geographic data (to generate maps)
-- demographic data (to add extra features)
+- demographic data (to add features)
 
-We'll link these datasets by zipcode much like tables in a database.  The geographic and demographic data come from a library and are already nicely formatted.  The features in the campaign contribution data, however, might need some explicit class declarations
+I'll link these datasets by zipcode much like tables in a database.  The geographic and demographic data come from a library and are already nicely formatted.  The features in the campaign contribution data, however, might need some explicit class declarations.
 
-Let's peak at the first few rows to inspect the atomic classes (aka types).
+Let's peak at the first few rows to inspect the atomic classes (types).
 
 ```{r initial-error, echo=TRUE, eval=TRUE, error=TRUE}
 df_look <- read.csv("campaign-contributions-ohio-2012.csv", nrows = 100)
 ```
 
-While trying to read the file, we get some kind of error about the row names.  Let's explicitly set `row.names = NULL` to see if that fixes it.
+While trying to read the file, there is some kind of error about the row names.  Let's explicitly set `row.names = NULL` to see if that fixes it.
 
 ```{r rownames-null, echo=1}
 df_look <- read.csv("campaign-contributions-ohio-2012.csv",
@@ -422,7 +423,7 @@ We see a fairly normal distribution with median rent in the locations in which c
 
 The median age in which contributors live also resembles a normal distrubtion with median `r median(df$med_age, na.rm = TRUE)`  Looking back at the summary statistics we can see that most contributions come from areas where the median age is over 40 (39.5 precisely).  I could not find exact statistics for the median age in Ohio in 2012, but in 2015 it appears to be 38.8.  We might be tempted to say that contributions come from areas where the population is older which would make sense given the high number of retiree contributions.  However whether or not the difference is significant would need some inferential analysis which is beyond the scope of this project.
 
-```{r fig.height=11, fig.width=8}
+```{r fig.height=10, fig.width=8}
 total_cont_df <- df %>% group_by(zipcode) %>% summarise(count = n())
 # can't create count buckets and use that variable to fill the polygon.
 # it has to be created within the geom.
@@ -432,11 +433,11 @@ quants <- quantile(total_cont_df$count,
 ggplot() +
   geom_map(data = mapdata.ohio, map = mapdata.ohio,
                     aes(map_id = region, x = long, y = lat, group = group),
-                    fill = "white", color = "lightgray", alpha = 0.7) +
+                    fill = "white", color = "lightgray") +
   geom_map(data = total_cont_df, map = mapdata.ohio,
            aes(map_id = zipcode,
                fill = cut(count, breaks = quants, include.lowest = TRUE)),
-           color = "lightgray", alpha = 0.7) +
+           color = "lightgray", alpha = 0.8) +
   scale_fill_brewer(name = 'Total Contributions', palette  = 'Purples') +
   geom_point(data = mapdata.ohio.cities,
              aes(x = city_long, y = city_lat, group = NULL), # size = city_pop
@@ -573,7 +574,7 @@ print(pairs_plt, left = 0.75, bottom = 0.75)
 p1 <- ggplot(data = df, aes(x = month(date, label=TRUE),
                             fill = as.factor(year(df$date)))) +
   geom_bar(position = "dodge", color = "black") +
-  scale_fill_manual(values = c("#7fcdbb", "#2c7fb8")) +
+  scale_fill_manual(values = c("hotpink2", "hotpink4")) +
   theme(legend.position = "bottom", legend.title=element_blank(),
         axis.title.x = element_blank())
 
@@ -582,7 +583,7 @@ p2 <- ggplot(aes(y = amount, x = as.factor(year(date)),
   geom_boxplot(outlier.color = NA) +
   stat_summary(fun.y = mean, geom = "point", size = 3) +
   coord_cartesian(ylim = c(0, 400)) +
-  scale_fill_manual(values = c("#7fcdbb", "#2c7fb8"), guide = FALSE) +
+  scale_fill_manual(values = c("hotpink2", "hotpink4"), guide = FALSE) +
   theme(axis.title.x = element_blank())
 
 grid.arrange(p1, p2, ncol = 1)
@@ -596,12 +597,12 @@ good <- !is.na(df$gender) & df$party != "green"
 
 p1 <- ggplot(data = df[good, ], aes(x = party, fill = gender)) +
   geom_bar(position = "dodge", color = "black") +
-  scale_fill_brewer(palette = 'Set2')
+  scale_fill_brewer(palette = 'Set2', direction = -1)
 
 p2 <- ggplot(data = df[good, ], aes(x = gender, y = amount, fill = gender)) +
   geom_boxplot(outlier.color = NA) +
   stat_summary(fun.y = mean, geom = "point", size = 3) +
-  scale_fill_brewer(palette = 'Set2', guide = FALSE) +
+  scale_fill_brewer(palette = 'Set2', direction = -1, guide = FALSE) +
   coord_cartesian(ylim = c(0, 400))
 
 grid.arrange(p1, p2, ncol = 1)
@@ -638,8 +639,8 @@ This is a weak correlation as seen by the points in the plot and the trend is pr
 ```{r fig.height=4}
 ggplot(aes(y = amount, x = date), data = df) +
   geom_jitter(alpha = 0.02) +
-  geom_smooth(method = 'lm', color = "cyan4") +
-  geom_smooth(color = "cyan4") +
+  geom_smooth(method = 'lm', color = "hotpink3") +
+  geom_smooth(color = "hotpink3") +
   coord_cartesian(ylim = c(0, 1000))
 
 cor(df$time, df$amount, use = "complete.obs")
@@ -649,7 +650,7 @@ It's interesting to see that there is a second peak on this plot.  Almost like a
 
 Next I want to look at total contribution amounts by party on the map.  My guess is that rural areas will show more Republican contributions.  The colors for each map correspond to percentile buckets with cuts at 15%, 30%, 45%, 55%, 70%, %85, and 100%.
 
-```{r fig.height=11, fig.width=8}
+```{r fig.height=10, fig.width=8}
 total_amt_dem_df <- df[(df$party == "democrat"), ] %>% group_by(zipcode) %>%
     summarise(total_amt = sum(amount))
 
@@ -659,13 +660,13 @@ quants <- quantile(total_amt_dem_df$total_amt,
 ggplot() +
   geom_map(data = mapdata.ohio, map = mapdata.ohio,
                     aes(map_id = region, x = long, y = lat, group = group),
-                    fill = "white", color = "lightgray", alpha = 0.7) +
+                    fill = "white", color = "lightgray") +
   geom_map(data = total_amt_dem_df, map = mapdata.ohio,
            aes(map_id = zipcode,
                fill = cut(total_amt, breaks = quants, include.lowest = TRUE)),
-           color = "lightgray", alpha = 0.7) +
+           color = "lightgray", alpha = 0.8) +
   scale_fill_brewer(name = 'Total Contributions by Democrats',
-                    palette  = 'Reds') +
+                    palette  = 'Blues') +
   geom_point(data = mapdata.ohio.cities,
              aes(x = city_long, y = city_lat, group = NULL),
              size = 2, color = 'black') +
@@ -677,7 +678,7 @@ ggplot() +
 ```
 
 
-```{r fig.height=11, fig.width=8}
+```{r fig.height=10, fig.width=8}
 total_amt_rep_df <- df[(df$party == "republican"), ] %>% group_by(zipcode) %>%
     summarise(total_amt = sum(amount))
 
@@ -687,11 +688,11 @@ quants <- quantile(total_amt_rep_df$total_amt,
 ggplot() +
   geom_map(data = mapdata.ohio, map = mapdata.ohio,
                     aes(map_id = region, x = long, y = lat, group = group),
-                    fill = "white", color = "lightgray", alpha = 0.7) +
+                    fill = "white", color = "lightgray") +
   geom_map(data = total_amt_rep_df, map = mapdata.ohio,
            aes(map_id = zipcode,
                fill = cut(total_amt, breaks = quants, include.lowest = TRUE)),
-           color = "lightgray", alpha = 0.7) +
+           color = "lightgray", alpha = 0.8) +
   scale_fill_brewer(name = 'Total Contributions by Republicans',
                     palette  = 'Reds') +
   geom_point(data = mapdata.ohio.cities,
@@ -732,7 +733,7 @@ Now I'll take a look at relationships between amount and a couple of a my highly
 ```{r multivariate_plots}
 p1 <- ggplot(data = df[!is.na(df$gender), ],
        aes(x = percap_incm, y = amount, color = gender)) +
-  scale_color_brewer(palette = 'Set2') +
+  scale_color_brewer(palette = 'Set2', direction = -1) +
   geom_smooth() + geom_smooth(method = 'lm')
 
 p2 <- ggplot(data = df[df$party != "green", ],
@@ -748,7 +749,7 @@ The first plot of amount by per capita income faceted by gender doesn't really g
 ```{r}
 p1 <- ggplot(data = df[!is.na(df$gender), ],
        aes(x = date, y = amount, color = gender)) +
-  scale_color_brewer(palette = 'Set2') +
+  scale_color_brewer(palette = 'Set2', direction = -1) +
   geom_smooth() + geom_smooth(method = 'lm')
 
 p2 <- ggplot(data = df[df$party != "green", ],
@@ -763,7 +764,7 @@ As in the previous plot grid, time doesn't seem to be a factor across gender for
 
 I want to look at the average contribution by zipcode to see if there is any difference between urban and suburban/rural areas.
 
-```{r fig.height=11, fig.width=8}
+```{r fig.height=10, fig.width=8}
 df_avg_amt <- df %>% group_by(zipcode) %>% # add party to group for ggvis
   summarise(count = n(), total_amt = sum(amount)) %>%
   mutate(avg_amt = total_amt / count)
@@ -774,11 +775,11 @@ quants <- quantile(df_avg_amt$avg_amt,
 ggplot() +
   geom_map(data = mapdata.ohio, map = mapdata.ohio,
                     aes(map_id = region, x = long, y = lat, group = group),
-                    fill = "white", color = "lightgray", alpha = 0.7) +
+                    fill = "white", color = "lightgray") +
   geom_map(data = df_avg_amt, map = mapdata.ohio,
            aes(map_id = zipcode,
                fill = cut(avg_amt, breaks = quants, include.lowest = TRUE)),
-           color = "lightgray", alpha = 0.7) +
+           color = "lightgray", alpha = 0.8) +
   scale_fill_brewer(name = 'Average Contribution',
                     palette  = 'Greens') +
   geom_point(data = mapdata.ohio.cities,
@@ -867,8 +868,7 @@ anova(m3, m4)
 Time is also significant.  I'll plot the residuals to see if a linear model was the right choice for predicting the logarithm of amount.
 
 ```{r}
-layout(matrix(c(1,2,3,4),2,2))
-plot(m4)
+autoplot(m4, which = 1:2, ncol = 2, label.size = 2)
 ```
 
 We can see here that the residuals are close to normal around the middle range of values but deviate at the extremes.  It looks like there is a slope towards negative error as the value of the logarithm of amount increases.  As we saw with the distribution of amount, it wasn't perfectly log-normal so I'm not entirely suprised.  Let's take a look at the final statistics for the model with all features included (party, per capita income, gender, and time).
@@ -881,7 +881,7 @@ summary(m4)
 #thisDonation <- head(model_df)[2,c(9,2,3)]
 #modelEstimate = predict(m3, newdata = thisDonation,
 #                        interval="prediction", level = .95)
-# To get the real amount value, we need to exponentiate the modelEstimate.
+# Need to exponentiate the modelEstimate.
 #exp(modelEstimate)
 ```
 
@@ -910,26 +910,30 @@ I experimented with several different models and found that one which modeled th
 ### Plot One
 
 ```{r plot_one}
-p1 <- ggplot(data = df, aes(x = amount)) +
-  geom_histogram(bins = 25, fill = "mediumpurple4", color = "black") +
-  scale_x_log10(breaks = c(10, 100, 1000)) +
-  ggtitle('Distribution by Amount') +
-  xlab('Log10 Amount (USD)') + 
-  ylab('Number of Contributions')
+p1 <- ggplot(data = df, aes(x = month(date, label=TRUE),
+                            fill = as.factor(year(df$date)))) +
+    geom_bar(position = "dodge", color = "black") +
+    scale_fill_manual(values = c("hotpink2", "hotpink4"), guide = FALSE) +
+    ggtitle('Distribution by Time') +
+    xlab('Month') + 
+    ylab('Number of Contributions')
 
-p2 <- ggplot(data = df, aes(x = month(date, label=TRUE))) +
-  geom_bar(fill = "mediumpurple4", color = "black") +
-  ggtitle('Distribution by Month') +
-  xlab('Contribution Month') + 
-  ylab('Number of Contributions')
+p2 <- ggplot(aes(y = amount, x = as.factor(year(date)),
+                 fill = as.factor(year(df$date))), data = df) +
+    geom_boxplot(outlier.color = NA) +
+    stat_summary(fun.y = mean, geom = "point", size = 3, show.legend = FALSE) +
+    coord_cartesian(ylim = c(0, 400)) +
+    scale_fill_manual(values = c("hotpink2", "hotpink4"), name = "Year") +
+    ggtitle('Amount by Year') +
+    xlab('Year') + 
+    ylab('Amount of Contribution (USD)')
 
 grid.arrange(p1, p2, ncol = 2)
-summary(df$amount)
 ```
 
 ### Description One
 
-The first plot shows both how contribution amounts are distributed log-normally and how contributions increase leading up to an election.
+Contributions increase steadily from 2011 until the summer of 2012 before the election.  During the summer and into the fall, contributions increase exponentially.  Despite the increase in contributions leading up to the election, contribution amounts are on average lower in 2012 than in 2011.
 
 ### Plot Two
 
@@ -938,15 +942,15 @@ good <- !is.na(df$gender) & df$party != "green"
 
 p1 <- ggplot(data = df[good, ], aes(x = party, fill = gender)) +
   geom_bar(position = "dodge", color = "black") +
-  scale_fill_brewer(palette = 'Set2') +
+  scale_fill_brewer(palette = 'Set2', direction = -1) +
   ggtitle('Distribution by Party and Gender') +
   xlab('Party') + 
-  ylab('Number of Contributions')
+  ylab('Count')
 
 p2 <- ggplot(data = df[good, ], aes(x = gender, y = amount, fill = gender)) +
   geom_boxplot(outlier.color = NA) +
   stat_summary(fun.y = mean, geom = "point", size = 3, show_guide = FALSE) +
-  scale_fill_brewer(palette = 'Set2') +
+  scale_fill_brewer(palette = 'Set2', direction = -1) +
   coord_cartesian(ylim = c(0, 400)) +
   ggtitle('Amount by Gender') +
   xlab('Gender') + 
@@ -973,7 +977,7 @@ grid.arrange(p1, p2, p3, p4, nrow = 2)
 
 ### Description Two
 
-This plot grid shows that, in Ohio, most Democratic contributions were made by females and an overwhelming majority of Republican contributions were made by males. Also that, in general, Republican and male contribution amounts are higher than Democrat and female contribution amounts. An interesting rally phenomenon can be seen here with Republican party as the election date approaches.
+This plot grid shows the relationship between the 4 features most correlated with contributions.  Most contributions were made to the democratic party, and those came from a majority of females.  Most republican contributions came from males.  The average contribution amount was also higher for males compared to females.  As the per capita income of a contributor's area increases, the amount donated increases at a higher rate for republicans than democrats.  Also, leading up to the election, republican donation amounts show a second peak in the summer whereas democrats tend to donate in steadily decreasing amounts.  Almost as if republicans make a final rally before the election.
 
 ### Plot Three
 
@@ -995,19 +999,20 @@ quant_name[1] <- paste(quant_name_low[1], "-", quant_name_low[2])
 ggplot() +
     geom_map(data = mapdata.ohio, map = mapdata.ohio,
              aes(map_id = region, x = long, y = lat, group = group),
-             fill = "white", color = "lightgray", alpha = 0.7) +
+             fill = "white", color = "lightgray") +
     geom_map(data = df_avg_amt, map = mapdata.ohio,
              aes(map_id = zipcode,
                  fill = cut(avg_amt, breaks = quants, include.lowest = TRUE)),
-             color = "lightgray", alpha = 0.7) +
-    scale_fill_brewer(palette  = 'Greens') +
+             color = "lightgray", alpha = 0.8) +
+    scale_fill_brewer(palette  = 'Greens', labels = quant_name) +
     geom_point(data = mapdata.ohio.cities,
                aes(x = city_long, y = city_lat, group = NULL),
                size = 2, color = 'black') +
     geom_text(data = mapdata.ohio.cities,
               aes(x = city_long, y = city_lat, group = NULL, label = city_names),
               size = 4, color = 'black', hjust = 1, vjust = -2, fontface = 2) +
-    theme_map() + theme(legend.position = "bottom") +
+    theme_map() + theme(legend.position = "bottom",
+                        plot.title = element_text(size = 15)) +
     coord_map(projection = "mercator") +
     ggtitle('Choropleth of Average Contribution Amount') +
     guides(fill = guide_legend(title = "Amount (USD)"))
@@ -1015,7 +1020,7 @@ ggplot() +
 
 ### Description Three  
 
-This final plot shows that, despite total contribution amount being highly correlated with city center, average contribution amount is highest surrounding a city and also in some rural areas. This may shed light on why presidential candidates spend a significant amount of time campaigning in suburbs and seemingly rural areas.
+This final plot shows that, despite total contribution amount being highly correlated with city center, average contribution amount is highest in some rural areas. This may shed light on why presidential candidates spend a significant amount of time campaigning in suburbs and seemingly rural areas.
 
 ------
 
