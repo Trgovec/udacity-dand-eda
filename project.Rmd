@@ -79,7 +79,7 @@ head(df_look); rm(df_look)
 
 By setting the row names to `NULL` we forced row numbering but for some reason it used an existing column as the row number. Using `head` to look at the first 6 lines, it seems like there is a mismatch between the header and the rest of the data.  Let's manually open a connection to the file and read a few lines including the header to see if we can pinpoint the problem.
 
-```{r readlines}
+```{r read-lines}
 con <- file("campaign-contributions-ohio-2012.csv", "r")
 lines <- readLines(con, 5); close(con); lines
 ```
@@ -99,7 +99,7 @@ This confirms that the data following the header somehow has an extra field. Loo
 
 We can fix this a few different ways.  We can set the row names to NULL again, shift the column names to the left, and then remove the last column from the dataframe.  Or, we can get the header row by itself and then use it as the column name for the rest of the data without that last empty column.  The second options seems easier so we'll go with that.  After, we can finally peak into the correctly structured data to see if we need to make any adjustments (like strings as factors).
 
-```{r names-and-inspect, echo=-c(-12)}
+```{r names-and-inspect, echo=-c(-8)}
 df_test_header <- read.csv("test.csv",
                      header = FALSE, stringsAsFactors = FALSE, nrows = 1)
 column_names <- unname(unlist(df_test_header))
@@ -132,7 +132,7 @@ str(df_readr); rm(df_readr)
 
 We got a warning about the column mismatch but `readr` handled the discrepancy.  We could have done this instead and set the factors one by one but `read.csv` allows us to set all characters as factors which was advantageous.  It took way more effort than `readr` would have, but it also allowed us to pinpoint the exact problem.
 
-Back to loading the rest of the data. Let's load the geographic and demographic data.
+Back to loading the rest of the data. Let's load the geographic and demographic data and take a look at those.
 
 ```{r load-geo-demo, echo=FALSE, message=FALSE, warning=FALSE}
 # geographic data.
@@ -141,7 +141,7 @@ data(zip.map); str(zip.map)
 data(df_zip_demographics); str(df_zip_demographics)
 ```
 
-For both of these dataframes, the `region` variable (zipcode) is what we'll be using to relate to the contributions data.  For the demographic data, we can add the fields we want to the contributions dataframe.  However, we'll be making choropleth maps with the geographic data from different aggregate statistics from the contributions dataframe.  So we'll have to concatenate these 2 on the fly depending upon what we want to show.
+For both of these dataframes, the `region` variable (zipcode) is what we'll be using to relate to the contributions data.  For the demographic data, we can add the fields we want to the contributions dataframe.  However, we'll be making choropleth maps with the geographic data from different aggregate statistics from the contributions dataframe.  So we'll have to join these 2 on the fly depending upon what we want to show.
 
 ---
 
@@ -157,7 +157,7 @@ names(df) <- c("candidate", "name", "city", "state", "zipcode",
 summary(df)
 ```
 
-There's something interesting here that we can see by leaving the contributor names as factors.  There are a few contributors who made nearly 100 contributions.  We can also see which zipcodes had the most contributions.  This reinforces my thoughts about splitting the data up into 2 different sets, one for individual contributions and another for aggregate contributions per person.  If in the end our aim is to build a model for predicting contributions it might be more practical to predict total contributions rather than individual amounts.  We can create an aggregate contributions dataset at the end of our data munging process when we have all the other features we want.  Then we can compare feature correlations between datasets to see if either one looks more promising for model building.
+There's something interesting here that we can see by leaving the contributor names as factors.  There are a few contributors who made nearly 100 contributions.  We can also see which zipcodes had the most contributions.  This sort of supports my thoughts about splitting the data into 2 different sets, one for individual contributions and another for aggregate contributions per person.  For the aggregate dataset, I might want to use occupation or some grouping of that to approximate income since we don't have that feature.  If in the end our aim is to build a predictive model, then it might be better to try and predict total contribution number or amount per person rather than individual amounts.  I'll create an aggregate contributions dataset at the end of our data munging process when we have all the other features we want.  Then we can compare feature correlations between datasets to see if either one looks more promising for model building.
 
 Let's coerce those features that we mentioned before to characters and make date into a date object.
 
@@ -202,7 +202,7 @@ df$first_name <- substring(str_extract(df$name, ',\\s[A-Z]+'), 3, )
 gender_names_df <- gender(unique(df$first_name))
 gender_names_df <- gender_names_df[, c("name", "gender")]
 
-# merge dataframe with gender names.
+# join dataframe with gender names.
 df <- merge(df, gender_names_df,
             by.x = 'first_name', by.y = 'name', all.x = TRUE)
 
@@ -220,7 +220,9 @@ df$party <- ifelse (df$candidate %in% republican, "republican",
 df$party <- as.factor(df$party)
 ```
 
-Now we can add demographic data to the dataset and get coordinates for the cities from the web.  The cities will help us to see things better on the map.
+There were quite a few people who's gender could not be deduced from the first name.  After looking into it, titles and non-traditional english names proved to be the biggest culprits.
+
+Now we can add demographic data to the dataset and scrape coordinates for major cities from the web.  The cities will help us to see the population centers better on the map.
 
 ```{r add-demographic-and-city}
 demographics.ohio <- df_zip_demographics %>% filter(region %in% zip_legit)
@@ -262,8 +264,8 @@ rm(zip.map)
 ## so this was not included in further analysis.
 
 # Finally, we can create the aggregate contributions dataframe.
-# I'll consider anybody with the same name, of the same gender, in the same zipcode, who made
-# contributions to the same party, the same person
+# I'll consider anybody with the same name, of the same gender,
+# in the same zipcode, who made contributions to the same party, the same person
 # (occupation and employer proved to be inconsistent for the same person across different contributions).
 if(FALSE) {
 df_agg <- df
@@ -287,33 +289,35 @@ library(polycor); hetcor(df_agg[, c(2, 4:8)])
 #load("processed-data.Rdata")
 ```
 
+After exploring the aggregate contribution numbers and amounts per person, it doesn't look like the correlations for most features were any stronger with amount than with the original data.  There were also a lot of inconsistencies with names and occupations.  Across donations some people used fake names, different variations of their name or different titles for the same occupation (even for the same person).  This made things a bit of a mess and I decided to leave a lengthy cleaning like that for another time.
+
 ---
 
 # Univariate Plots Section
 
 ```{r global-options}
-knitr::opts_chunk$set(echo=FALSE, warning=FALSE, messages=FALSE)
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
 ```
 
-Now that the data is in the right format let's start our univariate exploration.
+Now that the data is in the right format let's start our univariate exploration.  Here are the names of all the features that we kept...
 
 ```{r univariate-plots}
 names(df)
 ```
 
-We have 19 different variables,
+and the class of each feature as we saw before.  Zipcode was a character in the map dataframe so it was left like this in the contributions dataframe as well.
 
 ```{r}
 str(df)
 ```
 
-with varying classes.
+Here are the aggregate statistics for our features.
 
 ```{r}
 summary(df)
 ```
 
-The most popular candidate to receive contributions was Barack Obama and the most popular party was the democratic party.  The city with the most contributions was Cincinnati and retired people represented the occupation with the largest amount of contributions.  The demographic of males made more contributions than females.  The median contribution was $`r median(df$amount)` and the average is $`r round(mean(df$amount))`.
+The most popular candidate to receive contributions was Barack Obama and the most popular party was the democratic party.  The city with the most contributions was Cincinnati and retired people represented the occupation with the largest amount of contributions (although we're not actually going to use this).  The demographic of males made more contributions than females.  The median contribution was $`r median(df$amount)` and the average is $`r round(mean(df$amount))`.
 
 For the following plots I'll use a purple color since the counts include both democrats and republicans.
 
@@ -417,11 +421,11 @@ p3 <- plot_hist_color("med_age")
 suppressMessages( grid.arrange(p1,p2,p3, ncol = 1) )
 ```
 
-The distribution of per capita income in which contributors live appears poisson, with the bulk of contributors living in zipcodes with a range of per capita income of about $20,000 - $40,000. The average is $`r round(mean(df$percap_incm, na.rm = TRUE))` and the median is $`r median(df$percap_incm, na.rm = TRUE)`.
+The distribution of per capita income in which contributors live appears poisson, with the bulk of contributors living in zipcodes with a range of per capita income of about $20,000 - $40,000.
 
-We see a fairly normal distribution with median rent in the locations in which contributors live. Rent is very cheap (median of $`r median(df$med_rent, na.rm = TRUE)`) as compared to California but per capita income is also lower.
+We see a fairly normal distribution with median rent in the locations in which contributors live. Rent is very cheap (median of $`r median(df$med_rent, na.rm = TRUE)`) as compared to my home state of California but per capita income is also lower.
 
-The median age in which contributors live also resembles a normal distrubtion with median `r median(df$med_age, na.rm = TRUE)`  Looking back at the summary statistics we can see that most contributions come from areas where the median age is over 40 (39.5 precisely).  I could not find exact statistics for the median age in Ohio in 2012, but in 2015 it appears to be 38.8.  We might be tempted to say that contributions come from areas where the population is older which would make sense given the high number of retiree contributions.  However whether or not the difference is significant would need some inferential analysis which is beyond the scope of this project.
+The median age in which contributors live also resembles a normal distrubtion with median `r median(df$med_age, na.rm = TRUE)`  Looking back at the summary statistics we can see that most contributions come from areas where the median age is over 40 (39.5 precisely).  I could not find exact statistics for the median age in Ohio in 2012, but in 2015 it appears to be 38.8.  We might be tempted to say that contributions come from areas where the population is slightly older which would make sense given the high number of contributions from people who listed their occupation as retired.  Whether or not the difference is significant would need some inferential analysis which is beyond the scope of this project.
 
 ```{r fig.height=10, fig.width=8}
 total_cont_df <- df %>% group_by(zipcode) %>% summarise(count = n())
@@ -493,7 +497,7 @@ A choropleth map of total contributions by zipcode shows that contributions gene
 
 ### What is the structure of your dataset?
 
-There are 151,479 instances of campaign contribution in the dataset with 19 features.  From the original data set 11 features were kept or derived:  
+There are 150,207 instances of campaign contribution in the dataset with 19 features.  From the original data set 11 features were kept or derived:  
 
 * candidate
 * name (contributor)
@@ -507,7 +511,7 @@ There are 151,479 instances of campaign contribution in the dataset with 19 feat
 * gender
 * party
 
-Using the zipcode feature, demographic information was added from another data set:  
+A total of 8 demographic features were linked by zipcode from another data set:  
 
 * total_population
 * percent_white
@@ -539,7 +543,7 @@ I believe that the percent ethnicities, total population, and median rent may be
 
 ### Did you create any new variables from existing variables in the dataset?
 
-I created two new variables, one for the gender of the contributor based upon the first name, and another for the party of the contributor based upon the candidate that received the contribution. I was unable to programatically determine gender by first name for about 4,742 instances (approx. 3% of the data).
+I created two new variables, one for the gender of the contributor based upon the first name, and another for the party of the contributor based upon the candidate that received the contribution. I was unable to programatically determine gender by first name for about 4,677 instances (approx. 3% of the data).
 
 ### Of the features you investigated, were there any unusual distributions? Did you perform any operations on the data to tidy, adjust, or change the form of the data? If so, why did you do this?
 
