@@ -26,6 +26,7 @@ library(choroplethrZip)
 library(ggplot2)
 library(stringr)
 library(dplyr)
+library(tidyr)
 library(zipcode)
 #install.packages("genderdata")
 library(gender)
@@ -99,7 +100,7 @@ This confirms that the data following the header somehow has an extra field. Loo
 
 We can fix this a few different ways.  We can set the row names to NULL again, shift the column names to the left, and then remove the last column from the dataframe.  Or, we can get the header row by itself and then use it as the column name for the rest of the data without that last empty column.  The second options seems easier so we'll go with that.  After, we can finally peak into the correctly structured data to see if we need to make any adjustments (like strings as factors).
 
-```{r names-and-inspect, echo=-c(-8)}
+```{r names-and-inspect, echo=-c(8)}
 df_test_header <- read.csv("test.csv",
                      header = FALSE, stringsAsFactors = FALSE, nrows = 1)
 column_names <- unname(unlist(df_test_header))
@@ -151,7 +152,7 @@ Before adding the demographic data, let's get the contributions dataframe prepar
 
 ```{r trim-data}
 df <- df[, 3:11]
-# rename features for readability.
+# readable feature names.
 names(df) <- c("candidate", "name", "city", "state", "zipcode",
                  "employer", "occupation", "amount", "date")
 summary(df)
@@ -185,7 +186,7 @@ summary(as.numeric(df$zipcode))
 
 Looks like they are all within the correct range with the exception of the NAs.  This data won't be usable for the choropleth maps but it's still useful for other statistics so we'll keep it.
 
-We do have negative amounts though, which happen to be refunds, so we'll have to exclude those observations.
+We do have negative amounts though, which happen to be refunds, so we'll have to exclude those observations.  Also, although the campaign contribution limit for an individual to a candidate was $2,500.00 in 2012, I want to include contributions made to parties so I won't be excluding observations made above that amount.
 
 ```{r refunds}
 bad <- df$amount <= 0; sum(bad); df <- df[!bad, ]
@@ -196,6 +197,13 @@ There were `r sum(bad)` refunds excluded.
 Let's engineer some features in order to make more use of the data that we have.  We'll get gender from name and party status from candidate.
 
 ```{r gender-party}
+# clean names of 1, 2, and 3 letter abbreviations (MR., DR., A., MRS.)
+df$name <- gsub("[A-Z]{1,3}\\.", "", df$name)
+# only 1 whitespace
+df$name <- gsub("( )+", " ", df$name)
+# trim trailing and leading whitespace
+df$name <- str_trim(df$name)
+
 # make first name feature from full name.
 df$first_name <- substring(str_extract(df$name, ',\\s[A-Z]+'), 3, )
 # get dataframe of unique first names and gender.
@@ -220,7 +228,7 @@ df$party <- ifelse (df$candidate %in% republican, "republican",
 df$party <- as.factor(df$party)
 ```
 
-There were quite a few people who's gender could not be deduced from the first name.  After looking into it, titles and non-traditional english names proved to be the biggest culprits.
+There were quite a few people who's gender could not be deduced from the first name.  After looking into it, abbreviated first names and non-traditional english names proved to be the biggest culprits.
 
 Now we can add demographic data to the dataset and scrape coordinates for major cities from the web.  The cities will help us to see the population centers better on the map.
 
@@ -255,7 +263,7 @@ mapdata.ohio.cities <- data.frame(city_names, city_long, city_lat, city_pop)
 
 Finally, we subset the map data for Ohio only since it includes the entire United States.
 
-```{r trim-mapdata}
+```{r trim-mapdata, echo=c(1)}
 mapdata.ohio <- zip.map %>% filter(region %in% zip_legit) %>% arrange(order)
 rm(zip.map)
 
@@ -289,7 +297,7 @@ library(polycor); hetcor(df_agg[, c(2, 4:8)])
 #load("processed-data.Rdata")
 ```
 
-After exploring the aggregate contribution numbers and amounts per person, it doesn't look like the correlations for most features were any stronger with amount than with the original data.  There were also a lot of inconsistencies with names and occupations.  Across donations some people used fake names, different variations of their name or different titles for the same occupation (even for the same person).  This made things a bit of a mess and I decided to leave a lengthy cleaning like that for another time.
+After exploring the aggregate contribution numbers and amounts per person, it doesn't look like the correlations for most features were any stronger with amount than with the original data.  There were also a lot of inconsistencies with names and occupations.  Across donations some people used fake names, different variations of their name or different titles for the same occupation.  This made things a bit of a mess and I decided to leave a lengthy cleaning like that for another time.
 
 ---
 
@@ -305,7 +313,7 @@ Now that the data is in the right format let's start our univariate exploration.
 names(df)
 ```
 
-and the class of each feature as we saw before.  Zipcode was a character in the map dataframe so it was left like this in the contributions dataframe as well.
+and the class of each feature as we saw before.  Zipcode was a character in the map dataframe so it was left like this in the contributions dataframe.
 
 ```{r}
 str(df)
@@ -323,17 +331,32 @@ For the following plots I'll use a purple color since the counts include both de
 
 ```{r}
 p1 <- ggplot(data = df, aes(x = amount)) +
-  geom_histogram(binwidth = 250, fill = "mediumpurple4", color = "black") +
+  geom_density(fill = "mediumpurple4", color = "black") +
   scale_x_continuous(breaks = c(0, 1000, 2500, 5000, 10000))
 
+# histogram
+if (FALSE) {ggplot(data = df, aes(x = amount)) +
+  geom_histogram(binwidth = 250, fill = "mediumpurple4", color = "black") +
+  scale_x_continuous(breaks = c(0, 1000, 2500, 5000, 10000))}
+
 p2 <- ggplot(data = df, aes(x = amount)) +
-  geom_histogram(fill = "mediumpurple4", color = "black") +
+  geom_density(fill = "mediumpurple4", color = "black") +
   scale_x_log10(breaks = c(10, 100, 1000))
 
+# histogram
+if (FALSE) {ggplot(data = df, aes(x = amount)) +
+  geom_histogram(fill = "mediumpurple4", color = "black") +
+  scale_x_log10(breaks = c(10, 100, 1000))}
+
 suppressMessages( grid.arrange(p1, p2, ncol = 1) )
+# shapiro test takes a max of 5000 observations
+set.seed(27)
+amount_sample <- sample(df$amount, 5000)
+shapiro.test(log(amount_sample))
+#qqnorm(amount_sample);qqline(amount_sample, col = "red")
 ```
 
-We have long-tailed data for the amount of contributions. There are so many contributions made under $1,000 that it's hard to see any of the outliers.  A logarithmic transformation of the x-axis reveals something of a log-normal distribution for the amount.
+We have long-tailed data for the amount of contributions. There are so many contributions made under $1,000 that it's hard to see any of the outliers.  A logarithmic transformation of the x-axis reveals something of a log-normal distribution for the amount although we can see that the data is more dense below the mean.  A normality test of a random sample of the logarithm of amount rejects the assumption of normality, so all we can really say is that it's long-tailed.
 
 ```{r}
 p1 <- ggplot(data = df, aes(x = amount)) +
@@ -354,7 +377,7 @@ p3 <- ggplot(data = df, aes(x = amount)) +
 grid.arrange(p1, p2, p3, ncol = 1)
 ```
 
-There are a significant group of people (`r nrow(df[df$amount == 2500, ])`) that, despite the long-tailed distribution, contribute $2,500.  It may be that there is a tax write-off reason for this.  Looking closer we can see that there appear to be several discrete values in increments of $50 that people are accustomed to contributing.  Under $60, we can see contributions spaced in intervals of $5.
+There are a significant group of individuals (`r nrow(df[df$amount == 2500, ])`) that make the maxiumum contribution of $2,500.  Looking closer we can see that there appear to be several discrete values in increments of $50 that people generally contribute.  Under $60, we can see contributions spaced in intervals of $5.
 
 ```{r}
 plot_bar_color <- function(feature) {
@@ -391,7 +414,7 @@ p3 <- p2 + scale_y_log10(labels = comma)
 grid.arrange(p1, p2, p3, layout_matrix = rbind(c(1,1),c(2,3)))
 ```
 
-Most contributions are made to either Obama or Romney.  Using a log scale we can see the other candidates a little better.  Cumulatively, there are a significant amount of contributions made to other candidates but they are mostly Republican.  The proportion of contributions to democrats vs. republicans seems to resemble the previous histrogram between Obama and Romney.  The amount of contributions to the green party is so small (`r sum(df$party == 'green')` contributions) that we might want to exclude for simplicity.
+Most contributions are made to either Obama or Romney.  Using a log scale we can see the other candidates a little better.  Cumulatively, there are a significant amount of contributions made to other candidates and they appear to be mostly Republican.  The proportion of contributions to democrats vs. republicans seems to resemble the previous histrogram between Obama and Romney.  The amount of contributions to the green party is so small (`r sum(df$party == 'green')` contributions) that we might want to exclude for simplicity.
   
 It's important to remember that the remaining demographic variables correspond to the contributor's zipcode and not to the contributor him/herself.
 
@@ -425,7 +448,7 @@ The distribution of per capita income in which contributors live appears poisson
 
 We see a fairly normal distribution with median rent in the locations in which contributors live. Rent is very cheap (median of $`r median(df$med_rent, na.rm = TRUE)`) as compared to my home state of California but per capita income is also lower.
 
-The median age in which contributors live also resembles a normal distrubtion with median `r median(df$med_age, na.rm = TRUE)`  Looking back at the summary statistics we can see that most contributions come from areas where the median age is over 40 (39.5 precisely).  I could not find exact statistics for the median age in Ohio in 2012, but in 2015 it appears to be 38.8.  We might be tempted to say that contributions come from areas where the population is slightly older which would make sense given the high number of contributions from people who listed their occupation as retired.  Whether or not the difference is significant would need some inferential analysis which is beyond the scope of this project.
+The median age in which contributors live also resembles a normal distrubtion with median `r median(df$med_age, na.rm = TRUE)`  I could not find exact statistics for the median age in Ohio in 2012, but in 2015 it appears to be 38.8.  We might be tempted to say that contributions come from areas where the population is slightly older which would make sense given the high number of contributions from people who listed their occupation as retired.  Whether or not the difference is significant would need some inferential analysis which is beyond the scope of this project.
 
 ```{r fig.height=10, fig.width=8}
 total_cont_df <- df %>% group_by(zipcode) %>% summarise(count = n())
@@ -489,7 +512,7 @@ proc.time() - ptm
 }
 ```
 
-A choropleth map of total contributions by zipcode shows that contributions generally come from areas nearer to cities.  There are also quite a few zipcodes without any contributions (seen with the same background color).
+A choropleth map of total contributions by zipcode shows that most contributions generally come from areas nearer to cities.  There are also quite a few zipcodes without any contributions (seen with white color).
 
 ---
 
@@ -497,7 +520,7 @@ A choropleth map of total contributions by zipcode shows that contributions gene
 
 ### What is the structure of your dataset?
 
-There are 150,207 instances of campaign contribution in the dataset with 19 features.  From the original data set 11 features were kept or derived:  
+There are `r nrow(df)` instances of campaign contribution in the dataset with `r ncol(df)` features.  From the original data set 11 features were kept or derived:  
 
 * candidate
 * name (contributor)
@@ -511,7 +534,7 @@ There are 150,207 instances of campaign contribution in the dataset with 19 feat
 * gender
 * party
 
-A total of 8 demographic features were linked by zipcode from another data set:  
+and a total of 8 demographic features were linked by zipcode from another data set:  
 
 * total_population
 * percent_white
@@ -528,14 +551,14 @@ Other observations:
 
 * The largest group of contributors by occupation are retirees
 * About 60% of contributions are made by democrats
-* The median contribution amount is $50 and the maximum is $15,000
+* The median contribution amount is $50 and the maximum is $2,500
 * Barack Obama received 60% of contributions
 * Women accounted for 45% of contributors
 * The number of monthly contributions show an exponential increase as the election approaches
 
 ### What is/are the main feature(s) of interest in your dataset?
 
-The main features of interest in the data set are amount, gender, party, per capita income, and median age. I would like to see if these factors are correlated with contribution amount. Occupation could be of interest however there are too many levels (6,846).
+The main features of interest in the data set are amount, gender, party, per capita income, and median age. I would like to see if these factors are correlated with contribution amount. Occupation could be of interest however there are too many levels `r length(levels(df$occupation))`.
 
 ### What other features in the dataset do you think will help support your investigation into your feature(s) of interest?
 
@@ -543,23 +566,23 @@ I believe that the percent ethnicities, total population, and median rent may be
 
 ### Did you create any new variables from existing variables in the dataset?
 
-I created two new variables, one for the gender of the contributor based upon the first name, and another for the party of the contributor based upon the candidate that received the contribution. I was unable to programatically determine gender by first name for about 4,677 instances (approx. 3% of the data).
+I created two new variables, one for the gender of the contributor based upon the first name, and another for the party of the contributor based upon the candidate that received the contribution. I was unable to programatically determine gender by first name for about `r sum(is.na(df$gender))` instances (approx. `r 100* round(sum(is.na(df$gender)) / nrow(df), 2)`% of the data).
 
 ### Of the features you investigated, were there any unusual distributions? Did you perform any operations on the data to tidy, adjust, or change the form of the data? If so, why did you do this?
 
-A log transformation of contribution amount revealed a log-normal distribution. Despite this, we can see in the non-skewed distribution that there are a significant group of people that donate the maximum allowable campaign contribution by law (approx. $2,600). There are also Political Action Committee (PAC) data in the set which have a larger limit (approx. $5,000). I am unsure of the validity of the outliers beyond this amount because of my limited knowledge of campaign finance law. That there were several negative amounts which needed to be corrected to positive leads me to believe that there could be further inaccuracies in the data set.  
-The data came in a tidy format and did not need to be transformed.
+Amount was long-tailed so I log-transformed this distribution but it proved to be non-normal.  To remove outliers or non-pertinent data, I excluded refunds but not contributions over the allowable limit for an individual ($2,500).  The amounts over this could be to the party but I am guessing more likely Political Action Committee (PAC) contributions which have a larger limit.  Other than this, the contribution data already came in a tidy format.
 
 ---
 
 # Bivariate Plots Section
 
-Before I plot any bivariate relationships, I want to see a correlation matrix of my variables of interest.  This will help to focus the rest of my exploration and cut down on uninformative plots.
+Before I plot any bivariate relationships, I want to see a correlation matrix of my variables of interest.  This will help to focus the rest of my exploration.
 
 ```{r bivariate_plots}
 # add time as numeric date variable
 df$time <- as.numeric(as.POSIXct(df$date, format="%Y-%m-%d %H:%M:%S"))
-hetcor(df[, c(8, 10:20)])
+correlations <- hetcor(df[!is.na(df$gender), c(8, 10:20)], std.err = FALSE)
+correlations
 ```
 
 Party, percapita income of the contributor's zipcode, gender, and time are the only variables with a correlation coefficient above 0.10.  Time has a negative correlation with amount indicating that despite the increase in contributions leading up to the election, amount of a contribution seems to wane as the election approaches.  I've never been to Ohio but because of the strong negative correlation between percentage of white and black ethnicity for a contributor's zipcode, I would think that it is somewhat segregated.
@@ -591,10 +614,10 @@ p2 <- ggplot(aes(y = amount, x = as.factor(year(date)),
   theme(axis.title.x = element_blank())
 
 grid.arrange(p1, p2, ncol = 1)
-oneway.test(df$amount ~ as.factor(year(df$date)), var.equal = TRUE)
+wilcox.test(amount ~ year(date), data = df)
 ```
 
-Contributions really ramp up in the summer before the election and the average contribution amount is significantly higher in 2012 than in 2011.
+Contributions really ramp up in the summer before the election and the average contribution amount is significantly higher in 2012 than in 2011.  Because amount is not normally distributed, I use a non-parametric test to see if the populations are significantly different over both years which they are.
 
 ```{r}
 good <- !is.na(df$gender) & df$party != "green"
@@ -610,10 +633,10 @@ p2 <- ggplot(data = df[good, ], aes(x = gender, y = amount, fill = gender)) +
   coord_cartesian(ylim = c(0, 400))
 
 grid.arrange(p1, p2, ncol = 1)
-oneway.test(df$amount ~ df$gender, var.equal = TRUE)
+wilcox.test(amount ~ gender, data = df[good, ])
 ```
 
-Contributions to the Democratic party came from a slight female majority whereas contributions to the Republican party came from an overwhelming male majority.  The mean contribution amount as well as the IQ range is larger for males than females.
+Contributions to the Democratic party came from a slight female majority whereas contributions to the Republican party came from an overwhelming male majority.  The mean contribution amount as well as the IQ range is larger for males than females and they are significantly different.
 
 ```{r fig.height=4}
 ggplot(data = df[df$party != "green", ],
@@ -623,10 +646,10 @@ ggplot(data = df[df$party != "green", ],
   scale_fill_brewer(palette = 'Set1', direction = -1, guide = FALSE) +
   coord_cartesian(ylim = c(0, 400))
 
-oneway.test(df$amount ~ df$party, var.equal = TRUE)
+wilcox.test(amount ~ party, data = df[good, ])
 ```
 
-This definitely resembles the previous plot.  Republicans also have a higher mean contribution amount and IQ range than democrats.
+This definitely resembles the previous plot.  Republicans also have a higher mean contribution amount and IQ range than democrats and the groups are significantly different.
 
 ```{r fig.height=4}
 ggplot(data = df, aes(x = percap_incm, y = amount)) +
@@ -635,7 +658,7 @@ ggplot(data = df, aes(x = percap_incm, y = amount)) +
   geom_smooth(color = "gold") +
   coord_cartesian(ylim = c(0, 1000))
 
-cor(df$percap_incm, df$amount, use = "complete.obs")
+cor.test(df$percap_incm, df$amount)
 ```
 
 This is a weak correlation as seen by the points in the plot and the trend is probably due to the higher per capita income demographic around 60K.
@@ -647,7 +670,7 @@ ggplot(aes(y = amount, x = date), data = df) +
   geom_smooth(color = "hotpink3") +
   coord_cartesian(ylim = c(0, 1000))
 
-cor(df$time, df$amount, use = "complete.obs")
+cor.test(df$time, df$amount)
 ```
 
 It's interesting to see that there is a second peak on this plot.  Almost like a final rally in contribution amount just before the election.
@@ -717,22 +740,21 @@ Both of the maps seem to have the heaviest concentrations of total amounts comin
 
 ### Talk about some of the relationships you observed in this part of the investigation. How did the feature(s) of interest vary with other features in the dataset?
 
-Relatively speaking, there were no strong relationship discovered in the numerical correlations. There were however significant correlations (abs. value > 3%) among all of the variables and amount. Per capita income had the strongest correlation (16%) followed by time (numerical date), median age, median rent, total population, percent asian, percent white, percent black, and percent hispanic with the lowest (-3.25%).  
-Time, total population, percent black, and percent hispanic were all negatively correlated. Among the ordered factors of gender and party, republican contributions were on average higher than democrat, as were male contributions higher than female. 
+There were no strong relationships discovered between amount and any of the other features. The 3 features with correlation values above 0.10 with amount were party (0.36), per capita income of the contributor's zipcode (0.16), gender (0.12), and time (-0.11).
 
 ### Did you observe any interesting relationships between the other features (not the main feature(s) of interest)?
 
-I did not expect that time and total population would be correlated with contribution amount. It appears that early on contributions are largest, which might make sense to support a candidate for a longer campaign. Total population seems a bit arbitrary as zipcodes are not necessarily zoned for equal area.
+The strongest relationship among all the variables was that between percent white and percent black of a contributors location. These are negatively correlated at 97%.
 
 ### What was the strongest relationship you found?
 
-The strongest relationship among all the variables was that between percent white and percent black of a contributors location. These are negatively correlated at 97%. Among the variables of interest the strongest correlation was between per capita income and amount which I suspected to be so.
+The inverse relationship between white and black percentage of a contributor's zipcode.  Among the variables of interest the strongest correlation was between party and amount which is not entirely surprising.
 
 ---
 
 # Multivariate Plots Section
 
-Now I'll take a look at relationships between amount and a couple of a my highly correlated features from the bivariate exploration.  There are a lot of contributions in the dataset and with scatterplots it's difficult to see the relationships especially since the correlations are weak, so I'll be using smoothing lines instead.
+Now I'll take a look at the relationships between amount and a combination of the highly correlated features from the bivariate exploration.  There are a lot of contributions in the dataset and with scatterplots it's difficult to see the relationships especially since the correlations are weak, so I'll be using smoothing lines instead.
 
 ```{r multivariate_plots}
 p1 <- ggplot(data = df[!is.na(df$gender), ],
@@ -765,6 +787,19 @@ grid.arrange(p1, p2, ncol = 1)
 ```
 
 As in the previous plot grid, time doesn't seem to be a factor across gender for contribution amount.  Converseley, there is a difference across party, and it looks as if contribution amounts for republicans have 2 peaks.  The first peak is somewhat shared for both parties and corresponds to what we saw before with larger contribution amounts in 2011 vs 2012.  The second peak is pretty exclusive to the republican party though, and it looks like republicans donate in larger amounts right before the election as compared to democrats.
+
+```{r fig.height=5, fig.width=7}
+df_agg <- df[good, ] %>% group_by(gender, party) %>%
+    summarise(avg_amt = mean(amount, rm.na = TRUE))
+
+ggplot(df_agg, aes(x = gender, y = party)) +
+    geom_raster(aes(fill = log(avg_amt))) +
+    scale_fill_distiller(palette = "Greens", direction = 1) + theme_dark()
+
+spread(df_agg, gender, avg_amt) %>% arrange(desc(male))
+```
+
+The heat map and table show the two highly correlated categorical variables with average contribution amount.  Seeing the numbers does put it in perspective.
 
 I want to look at the average contribution by zipcode to see if there is any difference between urban and suburban/rural areas.
 
@@ -835,7 +870,7 @@ library(ggmap)
 qmap('ohio', zoom = 7, maptype = 'roadmap')
 ```
 
-I want to build a linear model of my most highly correlated features to try and predict amount.  I'll be predicting the log of amount since we saw that the distribution was log-normal.  I'll also add features one by one to my model in order of highest correlation to see if there are improvements in performance.
+I want to build a linear model of my most highly correlated features to try and predict amount.  I'll be predicting the log of amount since we saw that the distribution was closest to that.  I'll also add features one by one to my model in order of highest correlation to see if there are improvements in performance.
 
 ```{r biuld_linear_model}
 df$time <- as.numeric(as.POSIXct(df$date, format="%Y-%m-%d %H:%M:%S"))
@@ -851,7 +886,7 @@ m4 <- update(m3, ~ . + time)
 mtable(m1, m2, m3, m4)
 ```
 
-All features remain significant for all models although the explained variance (R-sqaured) seems to be the same for each model (to one decimal).  The coefficients look as if they are near zero for per capita income and time.  I'm somewhat surprised here since the correlation coefficient for per capita income was higher than gender.  This could be rounding error, and we are prediciting the logarithm of amount so even a small value here could be significant in accounting for error.  I want to zoom in a little more and see detail for the difference between each model.
+All features remain significant for all models although the explained variance (R-sqaured) seems to be the same for each model (to one decimal).  The coefficients look as if they are near zero for per capita income and time (could be due to rounding).  I'm somewhat surprised here since the correlation coefficient for per capita income was higher than gender.  We are prediciting the logarithm of amount so even a small value could be significant in accounting for variance.  I want to zoom in a little more and see detail for the difference between each model.
 
 ```{r}
 anova(m1, m2)
@@ -863,13 +898,15 @@ The F-test shows a very small p-value indicating significance of per capita inco
 anova(m2, m3)
 ```
 
-Same here with gender, we see significance with both metrics although less explained error than before.
+Same here with gender, we see significance with both metrics although much less explained error than before.
 
 ```{r}
 anova(m3, m4)
 ```
 
-Time is also significant.  I'll plot the residuals to see if a linear model was the right choice for predicting the logarithm of amount.
+Time is also significant.
+
+I'll plot the residuals to see if a linear model was the right choice for predicting the logarithm of amount.
 
 ```{r}
 autoplot(m4, which = 1:2, ncol = 2, label.size = 2)
@@ -889,7 +926,7 @@ summary(m4)
 #exp(modelEstimate)
 ```
 
-The coefficients for per capita income and time are in fact pretty small but not zero.  The R-squared value is more precisely 0.19810 and p-value indicates significance.  All these statistics show that each feature added was significant and helped to improve the fit of the model.  Even so, the correlation coefficients for per capita income and time were very small compared to party and gender.  Again, I'm a bit surprised since per capita income had a stronger correlation to amount than gender.  In the end, the linear model only accounted for about 20% of the variation in donation amount which means that our features are still poor predictors for contribution amount.
+The coefficients for per capita income and time are in fact pretty small but not zero.  The R-squared value is precisely 0.1998 and p-value indicates significance.  All these statistics show that each feature added was significant and helped to improve the fit of the model.  Even so, the correlation coefficients for per capita income and time were very small compared to party and gender.  Again, I'm a bit surprised since per capita income had a stronger correlation to amount than gender.  In the end, the linear model only accounted for about 20% of the variation in donation amount which means that our features are still poor predictors for contribution amount.
 
 ---
 
@@ -897,15 +934,15 @@ The coefficients for per capita income and time are in fact pretty small but not
 
 ### Talk about some of the relationships you observed in this part of the investigation. Were there features that strengthened each other in terms of looking at your feature(s) of interest?
 
-I looked at amount against all of the significantly correlated features but adding in gender and/or party as a third variable. In nearly all of the comparisons gender and party proved to be a significant in differentiating total contribution amount. Specifically, contribution amount was higher for males than females as was it for Republicans versus Democrats. Also, because of the majority male constituency for Republican doners, we see that male trends generally mirror Republican trends as do female trends mirror Democratic trends. 
+Gender strengthened the difference in amount seen across per capita income, and party did the same for time.  It also seems that urban areas are not the most important areas in terms of average contribution amount.
 
 ### Were there any interesting or surprising interactions between features?
 
-I knew that gender and party might be significant factors but I did not know to what extent (these features could not be analyzed in the correlation table). I was somewhat surprised to see that differences in gender and party were universal across all other features with respect to contribution amount. An interesting finding was that Democratic contribution amounts show little increase with increasing per capita income of the contributors demographic as compared to Republican contribution amounts. Also, looking at contribution amount over time by party showed that, despite both parties having larger contribution amounts earlier on, Republicans increased their contribution amount leading up to the election whereas Democrats do not. The same is true for males over females but the relationship is less pronounced. This sort of last minute increase in contribution amount reminds me of a type of rally behavior. Whether or not this is effective in catapulting a candidate to nomination is a whole other question altogether but I doubt it to be so (especially since Romney lost Ohio in 2012). Another interesting difference between males and females is that as the median age of the demographic of the contributor increases, male contribution amount tends to increase whereas female contribution shows a slight decrease. The same idea applies for Republicans and Democrats, Republicans showing an increase in amount as the median age of the contributor's zipcode increases but holding steady for Democrats. If median age of the contributors zipcode did in fact reflect the actual age of the contributor, we could hypothesize that females are less inclined to donate large amounts as they get older.
+As per capita income of a contributor's area increases, the contribution amount increases more so for republicans than democrats.  This was interesting to see because the correlation seems to imply that republicans are more generous with their donations as their financial demographic improves.  Another interesting interaction for contribution amount was across time and party.  Both parties seems to have higher contribution amounts earlier on but leading up to the election, republicans sort of rally behind their candidate for one last push.  Whether or not this is effective in catapulting a candidate to nomination is a whole other question but it does remind me of increasingly invasive party advertisements that you see before an election.
 
 ### OPTIONAL: Did you create any models with your dataset? Discuss the strengths and limitations of your model.
 
-I experimented with several different models and found that one which modeled the log of amount with per capita income, gender, and party was the most effective in explaining variance in contribution amount. I tried to include time as a factor because it was highly negatively correlated with amount however adding this feature only decreased the R-squared value. Adding all of the remaining significantly correlated features had the same effect to decrease the R-squared value.
+I created a linear model to predict the logarithm of amount from my highest correlated features.  I was surprised to see that the coefficients for per capita income and time were near zero while gender, despite having a weaker correlation than per capita income, had a larger coefficient.  Party was the most important variable in explaining the variance in contribution amount. In the end the model only accounted for about 20% of the variation in amount so the features were poor.
 
 ------
 
@@ -981,7 +1018,7 @@ grid.arrange(p1, p2, p3, p4, nrow = 2)
 
 ### Description Two
 
-This plot grid shows the relationship between the 4 features most correlated with contributions.  Most contributions were made to the democratic party, and those came from a majority of females.  Most republican contributions came from males.  The average contribution amount was also higher for males compared to females.  As the per capita income of a contributor's area increases, the amount donated increases at a higher rate for republicans than democrats.  Also, leading up to the election, republican donation amounts show a second peak in the summer whereas democrats tend to donate in steadily decreasing amounts.  Almost as if republicans make a final rally before the election.
+This plot grid shows the relationship between the 4 features most correlated with contributions.  Most contributions were made to the democratic party, and those came from a majority of females.  Most republican contributions came from males.  The average contribution amount was also higher for males compared to females.  As the per capita income of a contributor's area increases, the amount donated increases at a higher rate for republicans than democrats.  Also, leading up to the election, republican donation amounts show a second peak right before the election whereas democrats tend to donate in steadily decreasing amounts.
 
 ### Plot Three
 
@@ -1030,12 +1067,12 @@ This final plot shows that, despite total contribution amount being highly corre
 
 # Reflection
 
-In my investigation of 2012 Presidential Campaign Contributions for the state of Ohio, I chose to focus on finding the most significant features of a contributors information that could be used to predict the actual contribution amount. The most significant features proved to be per capita income of the area in which the contributor lives (which we can assume gives an idea of the contributor him or herself), the gender of the contributor, and the political party affiliation of the contributor (simplified to be either Democrat or Republican). Per capita income of the contributor's zipcode has a positive correlation with the contributor's contribution amount. Males have on average higher contribution amounts than females as do Republicans versus Democrats. This would lead one to conclude that given these correlated features, the highest contribution amount could belong to a male Republican who lives in an area with high per capita income. The lowest contribution amount might belong to a contributor who is a female Democrat and who lives in an area with a low per capita income.
+In this investigation of campaign contributions, I chose to focus on identifying the most significant features that could be used to predict contribution amount. The most significant features proved to be party, gender, per capita income of the area in which the contributor lives (an approximation of income), and time. Given these correlated features, the highest contribution amount would probably be made in the year before the election by a male republican living in a suburban or rural area of high per capita income (I guess no surprises here).
 
-Despite these findings, the model that was developed was only able to account for about 18% of the variation in contribution amount. It would have been great to have actual income, age, and ethnicity of the contributor him/herself. I believe that these would have had a much higher correlation than the demographic information of the contributors zipcode. The demographic information was at best a rough approximation of the contributor.
+Despite these findings, the linear model used to explain contribution amount was only able to account for about 20% of the variation.  It would have been great to have actual income, age, and ethnicity of the contributor him/herself.  The next best thing to approximate income would have been to use the occupations feature although as I found it would take some time to clean it.
 
-With regard to the choropleth maps, it seemed apparent that total contributions and total contribution amount were highly correlated with city proximity. Average contribution appeared to be higher closer to cities, but with a buffer between the actual city center and high average contribution amounts.
+With regard to the choropleth maps, it seemed apparent that total contributions and total contribution amount were correlated with city centers.  Average contribution per zipcode didn't seem to follow this though, and those highest amounts appeared to be either surrounding cities (with a buffer) or in some other rural areas.  Data about the population density of each zipcode could be useful in creating another feature for rural, suburban, or urban areas (population count for each zipcode was available but area wasn't).
 
-There are several shortcomings of the data set. First, I question the validity of some of the information as several contribution amounts had to be changed from negative to positive. Second, as compared to other zipcodes, some lacked a substantial amount of data. This may have skewed the average contribution choropleth map. Another shortcoming was the inability to programatically determine the gender by first name of the contributor for about 4% of the data. I had a difficult time with regex in R, were I more adept at this, that data might have been included.
+There were two major shortcomings during the analysis both due to really dirty string data.  First was the inability to programatically determine the gender by first name for about 3% of the data.  The second was the mess that was the occupations feature which could have been engineered into another good predictor.  Also, I wanted to create an aggregate for each person but as mentioned the names were too inconsistent.
 
-If possible, further analysis could include distance, or some measure of proximity, to a city center. The choropleth maps that were generated attempted to show a spatial relationship between amount and cities. This was however at best an approximation without any concrete measurements to back-up the claims/insights. To do this, an average latitude and longitude value could be calculated and added as a variable for each zipcode, and another variable could be added for distance to the closest city.
+One last idea for future exploration would have been to get location data for more cities.  The average longitude and latitude of each zipcode could have been calculated as well as the distance to the nearest big city.  This would be another way (like the rural/suburban/urban feature but numerical) to see if distance played any roll in contribution amount.
