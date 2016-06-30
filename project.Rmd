@@ -96,9 +96,9 @@ con <- file("test.csv"); writeLines(lines, con); close(con)
 count.fields("test.csv", sep = ",")
 ```
 
-This confirms that the data following the header somehow has an extra field. Looking back at the results from `head` and `readlines`, we can see that the extra field is full of NAs and it's just an empty field caused by `","` at the end of each row.
+This confirms that the data following the header somehow has an extra field. Looking back at the results from `head` and `readlines`, we can see that the extra field is full of NAs and it's caused by `","` at the end of each row.
 
-We can fix this a few different ways.  We can set the row names to NULL again, shift the column names to the left, and then remove the last column from the dataframe.  Or, we can get the header row by itself and then use it as the column name for the rest of the data without that last empty column.  The second options seems easier so we'll go with that.  After, we can finally peak into the correctly structured data to see if we need to make any adjustments (like strings as factors).
+We can fix this a few different ways.  We can set the row names to NULL again, shift the column names to the left, and then remove the last column from the dataframe.  Or, we can get the header row by itself and then use it as the column names for the rest of the data without that last empty column.  The second option seems easier so we'll go with that.  After, we can finally peak into the correctly structured data to see if we need to make any adjustments (like strings as factors).
 
 ```{r names-and-inspect, echo=-c(8)}
 df_test_header <- read.csv("test.csv",
@@ -112,7 +112,7 @@ names(df_test_body) <- column_names
 str(df_test_body); rm(df_test_body); rm(df_test_header)
 ```
 
-There are more features that we want as factors than characters so we'll keep that default setting.  Contributor name should be a character, and zipcode should also be a character since it looks like some zipcodes are the full 9 digits and thus we're gonna have to do some string manipulation.  The receipt date should be a date object but we can also set that manually after we read in the data.
+There are more features that we want as factors than characters so we'll keep that default setting.  Contributor name should be a character, and zipcode should also be a character since it looks like some zipcodes are the full 9 digits and we're gonna have to do some string manipulation.  The receipt date should be a date object but we can also set that manually after we read in the data.
 
 Now we can read in the entire contributions file.  We'll have to skip the header again but since we already have the column names from the test dataframe we can set them easily. We add a dummy name to the column names variable to account for the empty entry and then delete that column afterwards.
 
@@ -123,7 +123,7 @@ df <- read.csv("campaign-contributions-ohio-2012.csv",
 df$dummy <- NULL; head(df)
 ```
 
-I'm curious to see how the `readr` package might have handled this, as it's supposed to be more intuitive with reading flat files.  The only drawback is that we would have to set the factors manually which could be pretty lengthy.  In any case, let's check it out.
+I'm curious to see how the `readr` package might have handled this, as it's supposed to be more intuitive with reading flat files.  The only drawback is that we would have to set the levels of the factors manually which could be pretty lengthy.  In any case, let's check it out.
 
 ```{r readr, echo=2}
 library(readr)
@@ -186,7 +186,7 @@ summary(as.numeric(df$zipcode))
 
 Looks like they are all within the correct range with the exception of the NAs.  This data won't be usable for the choropleth maps but it's still useful for other statistics so we'll keep it.
 
-We do have negative amounts though, which happen to be refunds, so we'll have to exclude those observations.  Also, although the campaign contribution limit for an individual to a candidate was $2,500.00 in 2012, I want to include contributions made to parties so I won't be excluding observations made above that amount.
+We do have negative amounts though, which happen to be refunds, so we'll have to exclude those observations.  Also, although the campaign contribution limit for an individual to a candidate was $2,500 in 2012, I want to include contributions made to parties so I won't be excluding observations made above that amount.
 
 ```{r refunds}
 bad <- df$amount <= 0; sum(bad); df <- df[!bad, ]
@@ -228,7 +228,7 @@ df$party <- ifelse (df$candidate %in% republican, "republican",
 df$party <- as.factor(df$party)
 ```
 
-There were quite a few people who's gender could not be deduced from the first name.  After looking into it, abbreviated first names and non-traditional english names proved to be the biggest culprits.
+There were quite a few people who's gender could not be deduced from the first name.  After looking into it, abbreviated first names and non-traditional english names were the biggest problems.
 
 Now we can add demographic data to the dataset and scrape coordinates for major cities from the web.  The cities will help us to see the population centers better on the map.
 
@@ -292,12 +292,12 @@ summary(df_agg); str(df_agg)
 library(polycor); hetcor(df_agg[, c(2, 4:8)])
 }
 
-# save/load data into '.Rdata' file for easy start.
+# SAVE OR LOAD DATA FROM '.Rdata' FILE FOR QUICK START.
 #save(df, demographics.ohio, mapdata.ohio, mapdata.ohio.cities, file = "processed-data.Rdata")
 #load("processed-data.Rdata")
 ```
 
-After exploring the aggregate contribution numbers and amounts per person, it doesn't look like the correlations for most features were any stronger with amount than with the original data.  There were also a lot of inconsistencies with names and occupations.  Across donations some people used fake names, different variations of their name or different titles for the same occupation.  This made things a bit of a mess and I decided to leave a lengthy cleaning like that for another time.
+As a side note, after exploring the aggregate contribution numbers and amounts per person, it doesn't look like the correlations were significantly stronger with aggregate amount than with the original data.  There were also a lot of inconsistencies with names and occupations.  Across donations some people used fake names, different variations of their name or different titles for the same occupation.  This made things a bit of a mess and I decided to leave a lengthy cleaning like that for another time.
 
 ---
 
@@ -319,7 +319,7 @@ and the class of each feature as we saw before.  Zipcode was a character in the 
 str(df)
 ```
 
-Here are the aggregate statistics for our features.
+Here are the summary statistics for our features.
 
 ```{r}
 summary(df)
@@ -349,14 +349,23 @@ if (FALSE) {ggplot(data = df, aes(x = amount)) +
   scale_x_log10(breaks = c(10, 100, 1000))}
 
 suppressMessages( grid.arrange(p1, p2, ncol = 1) )
-# shapiro test takes a max of 5000 observations
-set.seed(27)
-amount_sample <- sample(df$amount, 5000)
-shapiro.test(log(amount_sample))
-#qqnorm(amount_sample);qqline(amount_sample, col = "red")
 ```
 
-We have long-tailed data for the amount of contributions. There are so many contributions made under $1,000 that it's hard to see any of the outliers.  A logarithmic transformation of the x-axis reveals something of a log-normal distribution for the amount although we can see that the data is more dense below the mean.  A normality test of a random sample of the logarithm of amount rejects the assumption of normality, so all we can really say is that it's long-tailed.
+We have long-tailed data for the amount of contributions. There are so many contributions made under $1,000 that it's hard to see any of the outliers.  A logarithmic transformation of the x-axis reveals something of a log-normal distribution for the amount although we can see that the data is more dense below the mean.  Let's check to see if the distribution is in fact log-normal.
+
+```{r fig.height=4}
+#standardize amount
+amount_log_stand <- scale(log(df$amount))
+# shapiro test takes a max of 5000 observations
+set.seed(27)
+amount_sample <- sample(amount_log_stand, 5000)
+shapiro.test(amount_sample)
+# qqplot
+ggplot(amount_log_stand, aes(sample = amount_log_stand)) + stat_qq()
+rm(amount_log_stand); rm(amount_sample)
+```
+
+A normality test of a random sample of the logarithm of amount rejects the assumption of normality, and the qqplot reaffirms this, so all we can really say is that the distribution of amount is long-tailed.
 
 ```{r}
 p1 <- ggplot(data = df, aes(x = amount)) +
@@ -570,7 +579,7 @@ I created two new variables, one for the gender of the contributor based upon th
 
 ### Of the features you investigated, were there any unusual distributions? Did you perform any operations on the data to tidy, adjust, or change the form of the data? If so, why did you do this?
 
-Amount was long-tailed so I log-transformed this distribution but it proved to be non-normal.  To remove outliers or non-pertinent data, I excluded refunds but not contributions over the allowable limit for an individual ($2,500).  The amounts over this could be to the party but I am guessing more likely Political Action Committee (PAC) contributions which have a larger limit.  Other than this, the contribution data already came in a tidy format.
+Amount was long-tailed so I log-transformed this distribution but it proved to be non-normal.  To remove outliers or non-pertinent data, I excluded refunds but not contributions over the allowable limit for an individual ($2,500).  The amounts over this limit could be made to the party or come from Political Action Committees (PAC) which have a larger limit.  Other than this, the contribution data already came in a tidy format.
 
 ---
 
@@ -581,11 +590,12 @@ Before I plot any bivariate relationships, I want to see a correlation matrix of
 ```{r bivariate_plots}
 # add time as numeric date variable
 df$time <- as.numeric(as.POSIXct(df$date, format="%Y-%m-%d %H:%M:%S"))
-correlations <- hetcor(df[!is.na(df$gender), c(8, 10:20)], std.err = FALSE)
+keep <- !is.na(df$gender) & df$party != "green"
+correlations <- hetcor(df[keep, c(8, 10:20)], std.err = FALSE)
 correlations
 ```
 
-Party, percapita income of the contributor's zipcode, gender, and time are the only variables with a correlation coefficient above 0.10.  Time has a negative correlation with amount indicating that despite the increase in contributions leading up to the election, amount of a contribution seems to wane as the election approaches.  I've never been to Ohio but because of the strong negative correlation between percentage of white and black ethnicity for a contributor's zipcode, I would think that it is somewhat segregated.
+Party, percapita income of the contributor's zipcode, gender, and time are the only variables with a correlation coefficient above 0.10 with amount.  Of these, gender and party had the strongest correlation at 0.36 which is somewhat significant.  Time has a negative correlation with amount indicating that despite the increase in contributions leading up to the election, amount of a contribution seems to wane as the election approaches.  I've never been to Ohio but because of the strong negative correlation between percentage of white and black ethnicity for a contributor's zipcode, I would guess that it is somewhat segregated.
 
 ```{r pairs_plot, eval=FALSE, cache=TRUE, cache.path='cache/', fig.path='figure/'}
 pairs_df <- df[, c("amount", "party", "percap_incm", "gender", "time")] %>%
@@ -614,10 +624,11 @@ p2 <- ggplot(aes(y = amount, x = as.factor(year(date)),
   theme(axis.title.x = element_blank())
 
 grid.arrange(p1, p2, ncol = 1)
+tapply(df$amount, as.factor(year(df$date)), summary)
 wilcox.test(amount ~ year(date), data = df)
 ```
 
-Contributions really ramp up in the summer before the election and the average contribution amount is significantly higher in 2012 than in 2011.  Because amount is not normally distributed, I use a non-parametric test to see if the populations are significantly different over both years which they are.
+Contributions really ramp up in the summer before the election. The average contribution amount is significantly higher in 2011 than in 2012 although the biggest outlier is in 2012.  Because amount is not normally distributed, I use a non-parametric test to see if the populations are significantly different over both years which they are.
 
 ```{r}
 good <- !is.na(df$gender) & df$party != "green"
@@ -633,20 +644,24 @@ p2 <- ggplot(data = df[good, ], aes(x = gender, y = amount, fill = gender)) +
   coord_cartesian(ylim = c(0, 400))
 
 grid.arrange(p1, p2, ncol = 1)
+tapply(df$amount, df$gender, summary)
 wilcox.test(amount ~ gender, data = df[good, ])
 ```
 
 Contributions to the Democratic party came from a slight female majority whereas contributions to the Republican party came from an overwhelming male majority.  The mean contribution amount as well as the IQ range is larger for males than females and they are significantly different.
 
 ```{r fig.height=4}
-ggplot(data = df[df$party != "green", ],
+no_green <- df$party != "green"
+
+ggplot(data = df[no_green, ],
        aes(x = party, y = amount, fill = party)) +
   geom_boxplot(outlier.color = NA) +
   stat_summary(fun.y = mean, geom = "point", size = 3) +
   scale_fill_brewer(palette = 'Set1', direction = -1, guide = FALSE) +
   coord_cartesian(ylim = c(0, 400))
 
-wilcox.test(amount ~ party, data = df[good, ])
+tapply(df$amount[no_green], df$party[no_green], summary)
+wilcox.test(amount ~ party, data = df[no_green, ])
 ```
 
 This definitely resembles the previous plot.  Republicans also have a higher mean contribution amount and IQ range than democrats and the groups are significantly different.
@@ -673,7 +688,20 @@ ggplot(aes(y = amount, x = date), data = df) +
 cor.test(df$time, df$amount)
 ```
 
-It's interesting to see that there is a second peak on this plot.  Almost like a final rally in contribution amount just before the election.
+It's interesting to see that there is a second peak in this plot.  Almost like a final rally in contribution amount just before the election.
+
+Based off the results from this bivariate exploration (and perhaps prior suspicion) I want to see if the correlation of amount across gender, party, and per capita income of the contributor's zipcode still hold if exteme outliers are removed.  I suspect that there are large donations coming from republican males residing in high per capita income areas which may skewing the correlations.
+
+```{r}
+# 98th percentile is max contribution limit of $2500 and above
+outliers <- df$amount >= quantile(df$amount , 0.98)
+keep <- !is.na(df$gender) & df$party != "green"
+df_test <- df[!outliers & keep, c("amount", "gender", "party", "percap_incm")]
+hetcor(df_test, std.err = FALSE)
+summary(df[outliers, c("amount", "gender", "party", "percap_incm")])
+```
+
+Removing the 98th percentile of outliers (which corresponds to the maximum contribution limit of $2500 and above), we can see that the correlations for party and per capita income are slightly reduced while the correlation with gender slightly increased.  This implies that most of the outliers were republicans from higher per capita income areas but that females also played a significant part in these contributions.
 
 Next I want to look at total contribution amounts by party on the map.  My guess is that rural areas will show more Republican contributions.  The colors for each map correspond to percentile buckets with cuts at 15%, 30%, 45%, 55%, 70%, %85, and 100%.
 
@@ -942,7 +970,7 @@ As per capita income of a contributor's area increases, the contribution amount 
 
 ### OPTIONAL: Did you create any models with your dataset? Discuss the strengths and limitations of your model.
 
-I created a linear model to predict the logarithm of amount from my highest correlated features.  I was surprised to see that the coefficients for per capita income and time were near zero while gender, despite having a weaker correlation than per capita income, had a larger coefficient.  Party was the most important variable in explaining the variance in contribution amount. In the end the model only accounted for about 20% of the variation in amount so the features were poor.
+I created a linear model to predict the logarithm of amount from the highest correlated features.  I was surprised to see that the coefficients for per capita income and time were near zero while gender, despite having a weaker correlation than per capita income, had a larger coefficient.  Party was the most important variable in explaining the variance in contribution amount. In the end the model only accounted for about 20% of the variation in amount so the features were poor.
 
 ------
 
@@ -951,6 +979,8 @@ I created a linear model to predict the logarithm of amount from my highest corr
 ### Plot One
 
 ```{r plot_one}
+# plot of distribution over months and amount by year
+if (FALSE) {
 p1 <- ggplot(data = df, aes(x = month(date, label=TRUE),
                             fill = as.factor(year(df$date)))) +
     geom_bar(position = "dodge", color = "black") +
@@ -969,16 +999,9 @@ p2 <- ggplot(aes(y = amount, x = as.factor(year(date)),
     xlab('Year') + 
     ylab('Amount of Contribution (USD)')
 
-grid.arrange(p1, p2, ncol = 2)
-```
+# Contributions increase steadily from 2011 until the summer of 2012 before the election.  During the summer and into the fall, contributions increase exponentially.  Despite the increase in contributions leading up to the election, contribution amounts are on average lower in 2012 than in 2011.
+}
 
-### Description One
-
-Contributions increase steadily from 2011 until the summer of 2012 before the election.  During the summer and into the fall, contributions increase exponentially.  Despite the increase in contributions leading up to the election, contribution amounts are on average lower in 2012 than in 2011.
-
-### Plot Two
-
-```{r plot_two}
 good <- !is.na(df$gender) & df$party != "green"
 
 p1 <- ggplot(data = df[good, ], aes(x = party, fill = gender)) +
@@ -990,14 +1013,26 @@ p1 <- ggplot(data = df[good, ], aes(x = party, fill = gender)) +
 
 p2 <- ggplot(data = df[good, ], aes(x = gender, y = amount, fill = gender)) +
   geom_boxplot(outlier.color = NA) +
-  stat_summary(fun.y = mean, geom = "point", size = 3, show_guide = FALSE) +
+  stat_summary(fun.y = mean, geom = "point", size = 3, show.legend = FALSE) +
   scale_fill_brewer(palette = 'Set2', direction = -1) +
   coord_cartesian(ylim = c(0, 400)) +
   ggtitle('Amount by Gender') +
   xlab('Gender') + 
   ylab('Amount (USD)')
 
-p3 <- ggplot(data = df[df$party != "green", ],
+grid.arrange(p1, p2, ncol = 2)
+```
+
+### Description One
+
+Most contributions were made to the democratic party, and those came from a slight majority of females while most republican contributions were made by an overwhelming majority from males.  The average contribution amount is higher for males than for females.
+
+### Plot Two
+
+```{r plot_two}
+good <- !is.na(df$gender) & df$party != "green"
+
+p1 <- ggplot(data = df[df$party != "green", ],
        aes(x = percap_incm, y = amount, color = party)) +
   scale_color_brewer(palette = 'Set1', direction = -1) +
   geom_smooth() +
@@ -1005,7 +1040,7 @@ p3 <- ggplot(data = df[df$party != "green", ],
   xlab('Per Capita Income (USD)') + 
   ylab('Amount (USD)')
 
-p4 <- ggplot(data = df[df$party != "green", ],
+p2 <- ggplot(data = df[df$party != "green", ],
        aes(x = date, y = amount, color = party)) +
   scale_color_brewer(palette = 'Set1', direction = -1) +
   geom_smooth() +
@@ -1013,12 +1048,12 @@ p4 <- ggplot(data = df[df$party != "green", ],
   xlab('Date') + 
   ylab('Amount (USD)')
 
-grid.arrange(p1, p2, p3, p4, nrow = 2)
+grid.arrange(p1, p2, nrow = 2)
 ```
 
 ### Description Two
 
-This plot grid shows the relationship between the 4 features most correlated with contributions.  Most contributions were made to the democratic party, and those came from a majority of females.  Most republican contributions came from males.  The average contribution amount was also higher for males compared to females.  As the per capita income of a contributor's area increases, the amount donated increases at a higher rate for republicans than democrats.  Also, leading up to the election, republican donation amounts show a second peak right before the election whereas democrats tend to donate in steadily decreasing amounts.
+Republicans had on average higher contribution amounts than did democrats.  As the per capita income of a contributor's area increases, the amount donated increases at a higher rate for republicans than democrats.  Also, leading up to the election, republican donation amounts show a rally just before the election whereas democrats tend to donate in steadily decreasing amounts.
 
 ### Plot Three
 
